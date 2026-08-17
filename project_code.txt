@@ -1,0 +1,614 @@
+PROJECT STRUCTURE:
+==================
+src\main\resources\db\migration\V1__create_metadata_tables.sql
+src\main\resources\db\migration\V2__create_data_table.sql
+src\main\resources\db\migration\V3__create_pivot_tables.sql
+src\main\resources\db\migration\V4__create_partitions_and_functions.sql
+src\main\resources\db\migration\V5__create_test_objects.sql
+
+
+SOURCE CODE:
+============
+
+================================================================================
+FILE: src\main\resources\db\migration\V1__create_metadata_tables.sql
+================================================================================
+-- V1__create_metadata_tables.sql
+-- Таблицы метаданных в соответствии с Force.com Multitenancy Architecture
+
+-- ============================================
+-- Таблица организаций (Tenants)
+-- ============================================
+CREATE TABLE organizations (
+    org_id SERIAL PRIMARY KEY,
+    org_name VARCHAR(255) NOT NULL UNIQUE,
+    display_name VARCHAR(255),
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+-- Тестовые организации
+INSERT INTO organizations (org_id, org_name, display_name) VALUES
+    (1, 'org_alpha', 'Alpha Corporation'),
+    (2, 'org_beta', 'Beta Industries'),
+    (3, 'org_gamma', 'Gamma Solutions');
+
+-- ============================================
+-- Objects Metadata Table (UDD)
+-- Stores metadata about custom objects (tables/entities)
+-- ============================================
+CREATE TABLE mt_objects (
+    obj_id SERIAL PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(org_id),
+    obj_name VARCHAR(255) NOT NULL,        -- API name of the object
+    label VARCHAR(255),                     -- Display label
+    plural_label VARCHAR(255),              -- Plural form for UI
+    description TEXT,
+    is_custom BOOLEAN DEFAULT TRUE,         -- Custom vs Standard object
+    is_active BOOLEAN DEFAULT TRUE,
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by UUID,
+    modified_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_by UUID,
+    UNIQUE (org_id, obj_name)
+);
+
+CREATE INDEX idx_mt_objects_org ON mt_objects(org_id);
+
+-- ============================================
+-- Fields Metadata Table (UDD)
+-- Stores metadata about custom fields (columns/attributes)
+-- Maps fields to flex column slots in Data table
+-- ============================================
+CREATE TABLE mt_fields (
+    field_id SERIAL PRIMARY KEY,
+    org_id INTEGER NOT NULL REFERENCES organizations(org_id),
+    obj_id INTEGER NOT NULL REFERENCES mt_objects(obj_id) ON DELETE CASCADE,
+    field_name VARCHAR(255) NOT NULL,       -- API name
+    label VARCHAR(255),                      -- Display label
+    -- Supported datatypes: text, number, date, datetime, boolean,
+    -- picklist, autonumber, formula, master-detail, lookup, checkbox, email, url, phone
+    data_type VARCHAR(50) NOT NULL,
+    field_num INTEGER NOT NULL,              -- Position/slot in Data table (0-500)
+
+    -- Field properties
+    is_indexed BOOLEAN DEFAULT FALSE,        -- Should be copied to Indexes pivot table
+    is_unique BOOLEAN DEFAULT FALSE,         -- Should be copied to UniqueFields pivot table
+    is_required BOOLEAN DEFAULT FALSE,       -- NOT NULL constraint
+    is_external_id BOOLEAN DEFAULT FALSE,    -- Can be used for upsert operations
+
+    -- For relationship fields (lookup, master-detail)
+    relationship_name VARCHAR(255),          -- Name of the relationship
+    reference_obj_id INTEGER REFERENCES mt_objects(obj_id),  -- Target object
+    relationship_type VARCHAR(20),           -- 'lookup' or 'master-detail'
+    delete_constraint VARCHAR(20),           -- 'set_null', 'restrict', 'cascade'
+
+    -- For picklist fields
+    picklist_values TEXT[],                  -- Array of allowed values
+
+    -- For formula fields
+    formula_expression TEXT,                 -- Formula definition
+    formula_return_type VARCHAR(50),         -- Return type of formula
+
+    -- For autonumber fields
+    autonumber_format VARCHAR(100),          -- e.g., 'INV-{0000}'
+    autonumber_start INTEGER DEFAULT 1,
+
+    -- Validation
+    validation_rule TEXT,                    -- Custom validation expression
+    validation_message VARCHAR(500),         -- Error message
+
+    -- Field length/precision
+    length INTEGER,                          -- Max length for text fields
+    precision INTEGER,                       -- Total digits for number
+    scale INTEGER,                           -- Decimal places for number
+
+    -- Audit
+    created_at TIMESTAMPTZ DEFAULT NOW(),
+    created_by UUID,
+    modified_at TIMESTAMPTZ DEFAULT NOW(),
+    modified_by UUID,
+
+    UNIQUE (org_id, obj_id, field_name),
+    UNIQUE (org_id, obj_id, field_num)       -- One field per slot per object
+);
+
+CREATE INDEX idx_mt_fields_org_obj ON mt_fields(org_id, obj_id);
+CREATE INDEX idx_mt_fields_indexed ON mt_fields(org_id, obj_id) WHERE is_indexed = TRUE;
+CREATE INDEX idx_mt_fields_unique ON mt_fields(org_id, obj_id) WHERE is_unique = TRUE;
+
+================================================================================
+FILE: src\main\resources\db\migration\V2__create_data_table.sql
+================================================================================
+-- V2__create_data_table.sql
+-- Data Table (Heap Storage) + Clobs Table
+
+-- ============================================
+-- MT_DATA - Main data storage with flex columns
+-- ============================================
+CREATE TABLE mt_data (
+    org_id          INTEGER NOT NULL,
+    guid            UUID NOT NULL,
+    obj_id          INTEGER NOT NULL,
+    name            VARCHAR(255),
+
+    -- Flex columns (50 slots)
+    value0 VARCHAR(4000), value1 VARCHAR(4000), value2 VARCHAR(4000), value3 VARCHAR(4000), value4 VARCHAR(4000),
+    value5 VARCHAR(4000), value6 VARCHAR(4000), value7 VARCHAR(4000), value8 VARCHAR(4000), value9 VARCHAR(4000),
+    value10 VARCHAR(4000), value11 VARCHAR(4000), value12 VARCHAR(4000), value13 VARCHAR(4000), value14 VARCHAR(4000),
+    value15 VARCHAR(4000), value16 VARCHAR(4000), value17 VARCHAR(4000), value18 VARCHAR(4000), value19 VARCHAR(4000),
+    value20 VARCHAR(4000), value21 VARCHAR(4000), value22 VARCHAR(4000), value23 VARCHAR(4000), value24 VARCHAR(4000),
+    value25 VARCHAR(4000), value26 VARCHAR(4000), value27 VARCHAR(4000), value28 VARCHAR(4000), value29 VARCHAR(4000),
+    value30 VARCHAR(4000), value31 VARCHAR(4000), value32 VARCHAR(4000), value33 VARCHAR(4000), value34 VARCHAR(4000),
+    value35 VARCHAR(4000), value36 VARCHAR(4000), value37 VARCHAR(4000), value38 VARCHAR(4000), value39 VARCHAR(4000),
+    value40 VARCHAR(4000), value41 VARCHAR(4000), value42 VARCHAR(4000), value43 VARCHAR(4000), value44 VARCHAR(4000),
+    value45 VARCHAR(4000), value46 VARCHAR(4000), value47 VARCHAR(4000), value48 VARCHAR(4000), value49 VARCHAR(4000),
+
+    -- Soft delete
+    is_deleted      BOOLEAN DEFAULT FALSE,
+    deleted_at      TIMESTAMPTZ,
+    deleted_by      UUID,
+
+    -- Audit
+    created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    created_by      UUID,
+    modified_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    modified_by     UUID,
+
+    PRIMARY KEY (org_id, guid)
+) PARTITION BY LIST (org_id);
+
+-- Index for object queries
+CREATE INDEX idx_mt_data_obj ON mt_data (org_id, obj_id);
+CREATE INDEX idx_mt_data_name ON mt_data (org_id, obj_id, name);
+CREATE INDEX idx_mt_data_deleted ON mt_data (org_id, obj_id) WHERE is_deleted = FALSE;
+
+-- ============================================
+-- MT_CLOBS - Large text fields storage
+-- PK must include partition key (org_id)
+-- ============================================
+CREATE TABLE mt_clobs (
+    org_id          INTEGER NOT NULL,
+    clob_id         UUID NOT NULL DEFAULT gen_random_uuid(),
+    data_guid       UUID NOT NULL,
+    field_num       INTEGER NOT NULL,
+    clob_value      TEXT,
+    created_at      TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+    modified_at     TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP,
+
+    PRIMARY KEY (org_id, clob_id)
+) PARTITION BY LIST (org_id);
+
+-- Index for lookups
+CREATE INDEX idx_mt_clobs_data ON mt_clobs (org_id, data_guid, field_num);
+
+-- ============================================
+-- Default partitions
+-- ============================================
+CREATE TABLE mt_data_default PARTITION OF mt_data DEFAULT;
+CREATE TABLE mt_clobs_default PARTITION OF mt_clobs DEFAULT;
+
+================================================================================
+FILE: src\main\resources\db\migration\V3__create_pivot_tables.sql
+================================================================================
+-- V3__create_pivot_tables.sql
+-- Pivot Tables for indexing, uniqueness, relationships
+-- Based on Force.com whitepaper architecture
+
+-- ============================================
+-- Indexes Pivot Table
+-- "Synchronously copies field data marked for indexing to appropriate column"
+-- Contains strongly typed indexed columns: StringValue, NumValue, DateValue
+-- Standard NON-UNIQUE database indexes
+-- ============================================
+CREATE TABLE mt_indexes (
+    idx_id BIGSERIAL,
+    org_id INTEGER NOT NULL,
+    obj_id INTEGER NOT NULL,
+    field_num INTEGER NOT NULL,           -- Maps to FieldNum in mt_fields
+    guid UUID NOT NULL,                   -- Reference to mt_data.guid
+
+    -- Strongly typed columns for indexing
+    -- StringValue uses case-folded format (universal, case-insensitive)
+    string_value VARCHAR(255),            -- For text, email, url, phone, picklist
+    num_value NUMERIC(18,6),              -- For number, currency, percent
+    date_value TIMESTAMPTZ,               -- For date, datetime
+
+    PRIMARY KEY (org_id, idx_id)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_indexes_default PARTITION OF mt_indexes DEFAULT;
+
+-- Non-unique indexes for each datatype (as per whitepaper)
+CREATE INDEX idx_mt_indexes_string ON mt_indexes(org_id, obj_id, field_num, string_value)
+    WHERE string_value IS NOT NULL;
+CREATE INDEX idx_mt_indexes_num ON mt_indexes(org_id, obj_id, field_num, num_value)
+    WHERE num_value IS NOT NULL;
+CREATE INDEX idx_mt_indexes_date ON mt_indexes(org_id, obj_id, field_num, date_value)
+    WHERE date_value IS NOT NULL;
+CREATE INDEX idx_mt_indexes_guid ON mt_indexes(org_id, guid);
+
+-- ============================================
+-- UniqueFields Pivot Table
+-- "Similar to Indexes except underlying indexes enforce uniqueness"
+-- ============================================
+CREATE TABLE mt_unique_fields (
+    idx_id BIGSERIAL,
+    org_id INTEGER NOT NULL,
+    obj_id INTEGER NOT NULL,
+    field_num INTEGER NOT NULL,
+    guid UUID NOT NULL,
+
+    -- Typed columns (same as Indexes)
+    string_value VARCHAR(255),
+    num_value NUMERIC(18,6),
+    date_value TIMESTAMPTZ,
+
+    PRIMARY KEY (org_id, idx_id)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_unique_fields_default PARTITION OF mt_unique_fields DEFAULT;
+
+-- UNIQUE indexes enforce field uniqueness per org+object+field
+CREATE UNIQUE INDEX idx_mt_unique_string ON mt_unique_fields(org_id, obj_id, field_num, string_value)
+    WHERE string_value IS NOT NULL;
+CREATE UNIQUE INDEX idx_mt_unique_num ON mt_unique_fields(org_id, obj_id, field_num, num_value)
+    WHERE num_value IS NOT NULL;
+CREATE UNIQUE INDEX idx_mt_unique_date ON mt_unique_fields(org_id, obj_id, field_num, date_value)
+    WHERE date_value IS NOT NULL;
+
+-- ============================================
+-- Relationships Pivot Table
+-- "Optimizes join operations for relationship fields"
+-- Two composite unique indexes for traversal in either direction
+-- ============================================
+CREATE TABLE mt_relationships (
+    rel_id BIGSERIAL,
+    org_id INTEGER NOT NULL,
+
+    -- Relationship metadata
+    relationship_id INTEGER NOT NULL,      -- Field ID of the relationship field
+
+    -- Parent object (referenced)
+    parent_obj_id INTEGER NOT NULL,
+    parent_guid UUID NOT NULL,
+
+    -- Child object (referencing)
+    child_obj_id INTEGER NOT NULL,
+    child_guid UUID NOT NULL,
+
+    PRIMARY KEY (org_id, rel_id)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_relationships_default PARTITION OF mt_relationships DEFAULT;
+
+-- Two unique composite indexes for efficient traversal (as per whitepaper)
+-- Index 1: OrgID + GUID (find all relationships for a record)
+CREATE UNIQUE INDEX idx_mt_rel_child_guid ON mt_relationships(org_id, child_guid, relationship_id);
+-- Index 2: OrgID + ObjID + RelationID + TargetObjID (traverse parent to children)
+CREATE INDEX idx_mt_rel_parent ON mt_relationships(org_id, parent_obj_id, parent_guid);
+CREATE INDEX idx_mt_rel_child ON mt_relationships(org_id, child_obj_id, child_guid);
+
+-- ============================================
+-- FallbackIndex Table
+-- "Records the Name of all objects for global object searches"
+-- "Updates happen synchronously as transactions modify objects"
+-- Used when external search engine is unavailable
+-- ============================================
+CREATE TABLE mt_fallback_index (
+    org_id INTEGER NOT NULL,
+    obj_id INTEGER NOT NULL,
+    guid UUID NOT NULL,
+    name VARCHAR(255),                     -- Natural name of the object instance
+    name_lower VARCHAR(255),               -- Lowercase for case-insensitive search
+    modified_at TIMESTAMPTZ DEFAULT NOW(),
+
+    PRIMARY KEY (org_id, guid)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_fallback_index_default PARTITION OF mt_fallback_index DEFAULT;
+
+-- Index for global name searches across objects
+CREATE INDEX idx_mt_fallback_search ON mt_fallback_index(org_id, name_lower varchar_pattern_ops);
+CREATE INDEX idx_mt_fallback_obj ON mt_fallback_index(org_id, obj_id, name_lower varchar_pattern_ops);
+
+-- ============================================
+-- NameDenorm Table
+-- "Lean data table that stores ObjID and Name of each object instance"
+-- "Used for hyperlinks to object instances in parent-child relationships"
+-- ============================================
+CREATE TABLE mt_name_denorm (
+    org_id INTEGER NOT NULL,
+    obj_id INTEGER NOT NULL,
+    guid UUID NOT NULL,
+    name VARCHAR(255),                     -- Display name for hyperlinks
+
+    PRIMARY KEY (org_id, guid)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_name_denorm_default PARTITION OF mt_name_denorm DEFAULT;
+
+CREATE INDEX idx_mt_name_denorm_obj ON mt_name_denorm(org_id, obj_id);
+
+-- ============================================
+-- History Tracking Table
+-- "Asynchronously records information about changes made to field"
+-- Stores: old value, new value, change date, who changed
+-- ============================================
+CREATE TABLE mt_field_history (
+    history_id BIGSERIAL,
+    org_id INTEGER NOT NULL,
+    obj_id INTEGER NOT NULL,
+    guid UUID NOT NULL,                    -- Record that was changed
+    field_num INTEGER NOT NULL,            -- Field that was changed
+
+    -- Change details
+    old_value TEXT,
+    new_value TEXT,
+    data_type VARCHAR(50),                 -- Type of the field for proper display
+
+    -- Audit
+    changed_at TIMESTAMPTZ DEFAULT NOW(),
+    changed_by UUID,
+
+    PRIMARY KEY (org_id, history_id)
+) PARTITION BY LIST (org_id);
+
+CREATE TABLE mt_field_history_default PARTITION OF mt_field_history DEFAULT;
+
+CREATE INDEX idx_mt_history_record ON mt_field_history(org_id, guid, changed_at DESC);
+CREATE INDEX idx_mt_history_field ON mt_field_history(org_id, obj_id, field_num, changed_at DESC);
+
+================================================================================
+FILE: src\main\resources\db\migration\V4__create_partitions_and_functions.sql
+================================================================================
+-- V4__create_partitions_and_functions.sql
+-- Partitions for test organizations and utility functions
+
+-- ============================================
+-- Create partitions for test organizations (1, 2, 3)
+-- "All data, metadata, and pivot table structures are physically
+-- partitioned by OrgID using native database partitioning"
+-- ============================================
+
+-- Partitions for mt_data
+CREATE TABLE mt_data_org1 PARTITION OF mt_data FOR VALUES IN (1);
+CREATE TABLE mt_data_org2 PARTITION OF mt_data FOR VALUES IN (2);
+CREATE TABLE mt_data_org3 PARTITION OF mt_data FOR VALUES IN (3);
+
+-- Partitions for mt_clobs
+CREATE TABLE mt_clobs_org1 PARTITION OF mt_clobs FOR VALUES IN (1);
+CREATE TABLE mt_clobs_org2 PARTITION OF mt_clobs FOR VALUES IN (2);
+CREATE TABLE mt_clobs_org3 PARTITION OF mt_clobs FOR VALUES IN (3);
+
+-- Partitions for mt_indexes
+CREATE TABLE mt_indexes_org1 PARTITION OF mt_indexes FOR VALUES IN (1);
+CREATE TABLE mt_indexes_org2 PARTITION OF mt_indexes FOR VALUES IN (2);
+CREATE TABLE mt_indexes_org3 PARTITION OF mt_indexes FOR VALUES IN (3);
+
+-- Partitions for mt_unique_fields
+CREATE TABLE mt_unique_fields_org1 PARTITION OF mt_unique_fields FOR VALUES IN (1);
+CREATE TABLE mt_unique_fields_org2 PARTITION OF mt_unique_fields FOR VALUES IN (2);
+CREATE TABLE mt_unique_fields_org3 PARTITION OF mt_unique_fields FOR VALUES IN (3);
+
+-- Partitions for mt_relationships
+CREATE TABLE mt_relationships_org1 PARTITION OF mt_relationships FOR VALUES IN (1);
+CREATE TABLE mt_relationships_org2 PARTITION OF mt_relationships FOR VALUES IN (2);
+CREATE TABLE mt_relationships_org3 PARTITION OF mt_relationships FOR VALUES IN (3);
+
+-- Partitions for mt_fallback_index
+CREATE TABLE mt_fallback_index_org1 PARTITION OF mt_fallback_index FOR VALUES IN (1);
+CREATE TABLE mt_fallback_index_org2 PARTITION OF mt_fallback_index FOR VALUES IN (2);
+CREATE TABLE mt_fallback_index_org3 PARTITION OF mt_fallback_index FOR VALUES IN (3);
+
+-- Partitions for mt_name_denorm
+CREATE TABLE mt_name_denorm_org1 PARTITION OF mt_name_denorm FOR VALUES IN (1);
+CREATE TABLE mt_name_denorm_org2 PARTITION OF mt_name_denorm FOR VALUES IN (2);
+CREATE TABLE mt_name_denorm_org3 PARTITION OF mt_name_denorm FOR VALUES IN (3);
+
+-- Partitions for mt_field_history
+CREATE TABLE mt_field_history_org1 PARTITION OF mt_field_history FOR VALUES IN (1);
+CREATE TABLE mt_field_history_org2 PARTITION OF mt_field_history FOR VALUES IN (2);
+CREATE TABLE mt_field_history_org3 PARTITION OF mt_field_history FOR VALUES IN (3);
+
+-- ============================================
+-- Function: Create all partitions for a new organization
+-- ============================================
+CREATE OR REPLACE FUNCTION create_org_partitions(p_org_id INTEGER)
+RETURNS VOID AS $$
+BEGIN
+    -- mt_data
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_data_org%s PARTITION OF mt_data FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_clobs
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_clobs_org%s PARTITION OF mt_clobs FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_indexes
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_indexes_org%s PARTITION OF mt_indexes FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_unique_fields
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_unique_fields_org%s PARTITION OF mt_unique_fields FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_relationships
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_relationships_org%s PARTITION OF mt_relationships FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_fallback_index
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_fallback_index_org%s PARTITION OF mt_fallback_index FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_name_denorm
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_name_denorm_org%s PARTITION OF mt_name_denorm FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+    -- mt_field_history
+    EXECUTE format('CREATE TABLE IF NOT EXISTS mt_field_history_org%s PARTITION OF mt_field_history FOR VALUES IN (%s)',
+                   p_org_id, p_org_id);
+END;
+$$ LANGUAGE plpgsql;
+
+-- ============================================
+-- Function: Case-folding for StringValue (case-insensitive search)
+-- "Application servers use a case-folding algorithm that converts
+-- string values to a universal, case-insensitive format"
+-- ============================================
+CREATE OR REPLACE FUNCTION case_fold(p_value VARCHAR)
+RETURNS VARCHAR AS $$
+BEGIN
+    RETURN LOWER(TRIM(p_value));
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+-- ============================================
+-- Function: Convert flex column value to appropriate type
+-- "Uses underlying database datatype-conversion functions
+-- (TO_NUMBER, TO_DATE, TO_CHAR) as necessary"
+-- ============================================
+CREATE OR REPLACE FUNCTION to_num(p_value VARCHAR)
+RETURNS NUMERIC AS $$
+BEGIN
+    RETURN p_value::NUMERIC;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION to_dt(p_value VARCHAR)
+RETURNS TIMESTAMPTZ AS $$
+BEGIN
+    RETURN p_value::TIMESTAMPTZ;
+EXCEPTION WHEN OTHERS THEN
+    RETURN NULL;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+CREATE OR REPLACE FUNCTION to_bool(p_value VARCHAR)
+RETURNS BOOLEAN AS $$
+BEGIN
+    RETURN CASE
+        WHEN LOWER(p_value) IN ('true', '1', 'yes', 'y', 't') THEN TRUE
+        WHEN LOWER(p_value) IN ('false', '0', 'no', 'n', 'f') THEN FALSE
+        ELSE NULL
+    END;
+END;
+$$ LANGUAGE plpgsql IMMUTABLE;
+
+================================================================================
+FILE: src\main\resources\db\migration\V5__create_test_objects.sql
+================================================================================
+-- V5__create_test_objects.sql
+-- Create test objects (Account, Contact) with fields for benchmarking
+
+-- ============================================
+-- Create Account object for all test organizations
+-- ============================================
+INSERT INTO mt_objects (obj_id, org_id, obj_name, label, plural_label, is_custom) VALUES
+    (1, 1, 'Account', 'Account', 'Accounts', FALSE),
+    (2, 1, 'Contact', 'Contact', 'Contacts', FALSE),
+    (3, 2, 'Account', 'Account', 'Accounts', FALSE),
+    (4, 2, 'Contact', 'Contact', 'Contacts', FALSE),
+    (5, 3, 'Account', 'Account', 'Accounts', FALSE),
+    (6, 3, 'Contact', 'Contact', 'Contacts', FALSE);
+
+-- ============================================
+-- Account fields for Org 1 (slots 0-9)
+-- ============================================
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length) VALUES
+    -- Account fields (obj_id = 1 for org 1)
+    (1, 1, 'AccountNumber', 'Account Number', 'text', 0, TRUE, TRUE, FALSE, 40),
+    (1, 1, 'Industry', 'Industry', 'picklist', 1, TRUE, FALSE, FALSE, NULL),
+    (1, 1, 'AnnualRevenue', 'Annual Revenue', 'number', 2, TRUE, FALSE, FALSE, NULL),
+    (1, 1, 'NumberOfEmployees', 'Employees', 'number', 3, TRUE, FALSE, FALSE, NULL),
+    (1, 1, 'Phone', 'Phone', 'phone', 4, FALSE, FALSE, FALSE, 40),
+    (1, 1, 'Website', 'Website', 'url', 5, FALSE, FALSE, FALSE, 255),
+    (1, 1, 'BillingCity', 'Billing City', 'text', 6, TRUE, FALSE, FALSE, 40),
+    (1, 1, 'BillingCountry', 'Billing Country', 'text', 7, TRUE, FALSE, FALSE, 80),
+    (1, 1, 'Type', 'Type', 'picklist', 8, TRUE, FALSE, FALSE, NULL),
+    (1, 1, 'Rating', 'Rating', 'picklist', 9, TRUE, FALSE, FALSE, NULL);
+
+-- ============================================
+-- Contact fields for Org 1 (slots 0-14)
+-- ============================================
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length, reference_obj_id, relationship_type) VALUES
+    -- Contact fields (obj_id = 2 for org 1)
+    (1, 2, 'FirstName', 'First Name', 'text', 0, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (1, 2, 'LastName', 'Last Name', 'text', 1, TRUE, FALSE, TRUE, 80, NULL, NULL),
+    (1, 2, 'Email', 'Email', 'email', 2, TRUE, TRUE, FALSE, 80, NULL, NULL),
+    (1, 2, 'Phone', 'Phone', 'phone', 3, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (1, 2, 'MobilePhone', 'Mobile', 'phone', 4, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (1, 2, 'Title', 'Title', 'text', 5, FALSE, FALSE, FALSE, 128, NULL, NULL),
+    (1, 2, 'Department', 'Department', 'text', 6, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (1, 2, 'Birthdate', 'Birthdate', 'date', 7, FALSE, FALSE, FALSE, NULL, NULL, NULL),
+    (1, 2, 'MailingCity', 'Mailing City', 'text', 8, TRUE, FALSE, FALSE, 40, NULL, NULL),
+    (1, 2, 'MailingCountry', 'Mailing Country', 'text', 9, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (1, 2, 'LeadSource', 'Lead Source', 'picklist', 10, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (1, 2, 'AccountId', 'Account', 'lookup', 11, TRUE, FALSE, FALSE, NULL, 1, 'lookup'),
+    (1, 2, 'Level', 'Level', 'picklist', 12, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (1, 2, 'Languages', 'Languages', 'text', 13, FALSE, FALSE, FALSE, 100, NULL, NULL),
+    (1, 2, 'HasOptedOutOfEmail', 'Email Opt Out', 'boolean', 14, FALSE, FALSE, FALSE, NULL, NULL, NULL);
+
+-- ============================================
+-- Copy same structure for Org 2 (obj_id 3, 4)
+-- ============================================
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length) VALUES
+    (2, 3, 'AccountNumber', 'Account Number', 'text', 0, TRUE, TRUE, FALSE, 40),
+    (2, 3, 'Industry', 'Industry', 'picklist', 1, TRUE, FALSE, FALSE, NULL),
+    (2, 3, 'AnnualRevenue', 'Annual Revenue', 'number', 2, TRUE, FALSE, FALSE, NULL),
+    (2, 3, 'NumberOfEmployees', 'Employees', 'number', 3, TRUE, FALSE, FALSE, NULL),
+    (2, 3, 'Phone', 'Phone', 'phone', 4, FALSE, FALSE, FALSE, 40),
+    (2, 3, 'Website', 'Website', 'url', 5, FALSE, FALSE, FALSE, 255),
+    (2, 3, 'BillingCity', 'Billing City', 'text', 6, TRUE, FALSE, FALSE, 40),
+    (2, 3, 'BillingCountry', 'Billing Country', 'text', 7, TRUE, FALSE, FALSE, 80),
+    (2, 3, 'Type', 'Type', 'picklist', 8, TRUE, FALSE, FALSE, NULL),
+    (2, 3, 'Rating', 'Rating', 'picklist', 9, TRUE, FALSE, FALSE, NULL);
+
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length, reference_obj_id, relationship_type) VALUES
+    (2, 4, 'FirstName', 'First Name', 'text', 0, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (2, 4, 'LastName', 'Last Name', 'text', 1, TRUE, FALSE, TRUE, 80, NULL, NULL),
+    (2, 4, 'Email', 'Email', 'email', 2, TRUE, TRUE, FALSE, 80, NULL, NULL),
+    (2, 4, 'Phone', 'Phone', 'phone', 3, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (2, 4, 'MobilePhone', 'Mobile', 'phone', 4, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (2, 4, 'Title', 'Title', 'text', 5, FALSE, FALSE, FALSE, 128, NULL, NULL),
+    (2, 4, 'Department', 'Department', 'text', 6, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (2, 4, 'Birthdate', 'Birthdate', 'date', 7, FALSE, FALSE, FALSE, NULL, NULL, NULL),
+    (2, 4, 'MailingCity', 'Mailing City', 'text', 8, TRUE, FALSE, FALSE, 40, NULL, NULL),
+    (2, 4, 'MailingCountry', 'Mailing Country', 'text', 9, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (2, 4, 'LeadSource', 'Lead Source', 'picklist', 10, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (2, 4, 'AccountId', 'Account', 'lookup', 11, TRUE, FALSE, FALSE, NULL, 3, 'lookup'),
+    (2, 4, 'Level', 'Level', 'picklist', 12, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (2, 4, 'Languages', 'Languages', 'text', 13, FALSE, FALSE, FALSE, 100, NULL, NULL),
+    (2, 4, 'HasOptedOutOfEmail', 'Email Opt Out', 'boolean', 14, FALSE, FALSE, FALSE, NULL, NULL, NULL);
+
+-- ============================================
+-- Copy same structure for Org 3 (obj_id 5, 6)
+-- ============================================
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length) VALUES
+    (3, 5, 'AccountNumber', 'Account Number', 'text', 0, TRUE, TRUE, FALSE, 40),
+    (3, 5, 'Industry', 'Industry', 'picklist', 1, TRUE, FALSE, FALSE, NULL),
+    (3, 5, 'AnnualRevenue', 'Annual Revenue', 'number', 2, TRUE, FALSE, FALSE, NULL),
+    (3, 5, 'NumberOfEmployees', 'Employees', 'number', 3, TRUE, FALSE, FALSE, NULL),
+    (3, 5, 'Phone', 'Phone', 'phone', 4, FALSE, FALSE, FALSE, 40),
+    (3, 5, 'Website', 'Website', 'url', 5, FALSE, FALSE, FALSE, 255),
+    (3, 5, 'BillingCity', 'Billing City', 'text', 6, TRUE, FALSE, FALSE, 40),
+    (3, 5, 'BillingCountry', 'Billing Country', 'text', 7, TRUE, FALSE, FALSE, 80),
+    (3, 5, 'Type', 'Type', 'picklist', 8, TRUE, FALSE, FALSE, NULL),
+    (3, 5, 'Rating', 'Rating', 'picklist', 9, TRUE, FALSE, FALSE, NULL);
+
+INSERT INTO mt_fields (org_id, obj_id, field_name, label, data_type, field_num, is_indexed, is_unique, is_required, length, reference_obj_id, relationship_type) VALUES
+    (3, 6, 'FirstName', 'First Name', 'text', 0, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (3, 6, 'LastName', 'Last Name', 'text', 1, TRUE, FALSE, TRUE, 80, NULL, NULL),
+    (3, 6, 'Email', 'Email', 'email', 2, TRUE, TRUE, FALSE, 80, NULL, NULL),
+    (3, 6, 'Phone', 'Phone', 'phone', 3, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (3, 6, 'MobilePhone', 'Mobile', 'phone', 4, FALSE, FALSE, FALSE, 40, NULL, NULL),
+    (3, 6, 'Title', 'Title', 'text', 5, FALSE, FALSE, FALSE, 128, NULL, NULL),
+    (3, 6, 'Department', 'Department', 'text', 6, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (3, 6, 'Birthdate', 'Birthdate', 'date', 7, FALSE, FALSE, FALSE, NULL, NULL, NULL),
+    (3, 6, 'MailingCity', 'Mailing City', 'text', 8, TRUE, FALSE, FALSE, 40, NULL, NULL),
+    (3, 6, 'MailingCountry', 'Mailing Country', 'text', 9, TRUE, FALSE, FALSE, 80, NULL, NULL),
+    (3, 6, 'LeadSource', 'Lead Source', 'picklist', 10, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (3, 6, 'AccountId', 'Account', 'lookup', 11, TRUE, FALSE, FALSE, NULL, 5, 'lookup'),
+    (3, 6, 'Level', 'Level', 'picklist', 12, TRUE, FALSE, FALSE, NULL, NULL, NULL),
+    (3, 6, 'Languages', 'Languages', 'text', 13, FALSE, FALSE, FALSE, 100, NULL, NULL),
+    (3, 6, 'HasOptedOutOfEmail', 'Email Opt Out', 'boolean', 14, FALSE, FALSE, FALSE, NULL, NULL, NULL);
+
+-- Reset sequences
+SELECT setval('mt_objects_obj_id_seq', 10);
+SELECT setval('mt_fields_field_id_seq', 100);
