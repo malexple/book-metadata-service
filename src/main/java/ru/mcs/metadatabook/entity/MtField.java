@@ -1,6 +1,5 @@
 package ru.mcs.metadatabook.entity;
 
-import io.hypersistence.utils.hibernate.type.array.StringArrayType;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.GeneratedValue;
@@ -13,13 +12,14 @@ import lombok.Builder;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
-import org.hibernate.annotations.Type;
 
 import java.time.OffsetDateTime;
-import java.util.UUID;
 
 /**
  * Метаданные поля объекта. field_num — номер flex-слота (value0..value49) в mt_data.
+ * Соответствует ТОЧНО схеме V1__create_core_metadata.sql — без formula/autonumber/
+ * validation/picklist полей, которые были в исходном демо-проекте Pivot, но не вошли
+ * в упрощённую схему книжного сервиса.
  */
 @Entity
 @Table(name = "mt_fields", uniqueConstraints = {
@@ -68,64 +68,20 @@ public class MtField {
     @Builder.Default
     private Boolean isRequired = false;
 
-    @Column(name = "is_external_id")
-    @Builder.Default
-    private Boolean isExternalId = false;
-
-    @Column(name = "relationship_name")
-    private String relationshipName;
-
     @Column(name = "reference_obj_id")
     private Integer referenceObjId;
 
     @Column(name = "relationship_type")
     private String relationshipType;
 
-    @Column(name = "delete_constraint")
-    private String deleteConstraint;
-
-    @Type(StringArrayType.class)
-    @Column(name = "picklist_values", columnDefinition = "text[]")
-    private String[] picklistValues;
-
-    @Column(name = "formula_expression")
-    private String formulaExpression;
-
-    @Column(name = "formula_return_type")
-    private String formulaReturnType;
-
-    @Column(name = "autonumber_format")
-    private String autonumberFormat;
-
-    @Column(name = "autonumber_start")
-    private Integer autonumberStart;
-
-    @Column(name = "validation_rule")
-    private String validationRule;
-
-    @Column(name = "validation_message")
-    private String validationMessage;
-
     @Column(name = "length")
     private Integer length;
-
-    @Column(name = "precision")
-    private Integer precision;
-
-    @Column(name = "scale")
-    private Integer scale;
 
     @Column(name = "created_at")
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
-    @Column(name = "created_by")
-    private UUID createdBy;
-
     @Column(name = "modified_at")
     @Builder.Default
     private OffsetDateTime modifiedAt = OffsetDateTime.now();
-
-    @Column(name = "modified_by")
-    private UUID modifiedBy;
 }

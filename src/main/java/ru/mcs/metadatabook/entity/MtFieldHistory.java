@@ -16,8 +16,9 @@ import java.time.OffsetDateTime;
 import java.util.UUID;
 
 /**
- * История изменений value-слотов. Используется при повторном обогащении
- * (scheduler находит новое значение из Litres/Ozon поверх уже существующего).
+ * История изменений value-слотов. Соответствует ТОЧНО схеме
+ * V2__create_data_and_indexes.sql — без changed_by (его нет в этой таблице,
+ * в отличие от исходного демо-проекта Pivot).
  */
 @Entity
 @Table(name = "mt_field_history")
@@ -57,7 +58,4 @@ public class MtFieldHistory {
     @Column(name = "changed_at")
     @Builder.Default
     private OffsetDateTime changedAt = OffsetDateTime.now();
-
-    @Column(name = "changed_by")
-    private UUID changedBy;
 }

@@ -10,57 +10,53 @@ import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
-import ru.mcs.metadatabook.dto.ObjectDto;
+import ru.mcs.metadatabook.dto.FieldDto;
 import ru.mcs.metadatabook.entity.MtField;
 import ru.mcs.metadatabook.entity.MtObject;
-import ru.mcs.metadatabook.mapper.ObjectMapper;
 import ru.mcs.metadatabook.service.MetadataService;
 
 import java.util.List;
 
+/**
+ * Служебный API для UI-конструктора: показать список объектов/полей,
+ * чтобы пользователь галочками выбрал нужные и получил пример вызова
+ * /api/v1/books?fields=... (см. BookApiController).
+ */
 @RestController
 @RequestMapping("/api/metadata")
 @RequiredArgsConstructor
-@Tag(name = "Metadata", description = "API для работы с метаданными объектов и полей")
+@Tag(name = "Metadata", description = "Метаданные объектов и полей для UI-конструктора")
 public class MetadataController {
 
     private final MetadataService metadataService;
-    private final ObjectMapper objectMapper;
 
-    @Operation(summary = "Получить все объекты организации")
+    @Operation(summary = "Список объектов (Book, Author, Magazine...)")
     @GetMapping("/objects")
-    public ResponseEntity<List<ObjectDto>> getObjects(
-            @Parameter(description = "ID организации", example = "1")
-            @RequestParam(defaultValue = "1") Integer orgId) {
-
-        List<MtObject> objects = metadataService.getObjectsByOrg(orgId);
-        return ResponseEntity.ok(objectMapper.toDtoList(objects));
+    public ResponseEntity<List<MtObject>> getObjects(
+            @Parameter(example = "1") @RequestParam(defaultValue = "1") Integer orgId) {
+        return ResponseEntity.ok(metadataService.getObjectsByOrg(orgId));
     }
 
-    @Operation(summary = "Получить объект по имени")
-    @GetMapping("/objects/{objectName}")
-    public ResponseEntity<ObjectDto> getObject(
-            @Parameter(description = "ID организации", example = "1")
-            @RequestParam(defaultValue = "1") Integer orgId,
-
-            @Parameter(description = "Имя объекта", example = "Contact")
-            @PathVariable String objectName) {
-
-        MtObject object = metadataService.getObjectByName(orgId, objectName);
-        return ResponseEntity.ok(objectMapper.toDto(object));
-    }
-
-    @Operation(summary = "Получить поля объекта")
+    @Operation(summary = "Поля объекта — источник для чекбоксов в UI-конструкторе")
     @GetMapping("/objects/{objectName}/fields")
-    public ResponseEntity<List<MtField>> getFields(
-            @Parameter(description = "ID организации", example = "1")
-            @RequestParam(defaultValue = "1") Integer orgId,
-
-            @Parameter(description = "Имя объекта", example = "Contact")
-            @PathVariable String objectName) {
+    public ResponseEntity<List<FieldDto>> getFields(
+            @Parameter(example = "1") @RequestParam(defaultValue = "1") Integer orgId,
+            @Parameter(example = "Book") @PathVariable String objectName) {
 
         MtObject object = metadataService.getObjectByName(orgId, objectName);
-        List<MtField> fields = metadataService.getFieldsByObject(orgId, object.getObjId());
-        return ResponseEntity.ok(fields);
+        List<FieldDto> dtos = metadataService.getFieldsByObject(orgId, object.getObjId()).stream()
+                .map(this::toDto)
+                .toList();
+        return ResponseEntity.ok(dtos);
+    }
+
+    private FieldDto toDto(MtField f) {
+        return FieldDto.builder()
+                .fieldName(f.getFieldName())
+                .label(f.getLabel())
+                .dataType(f.getDataType())
+                .isIndexed(f.getIsIndexed())
+                .isRequired(f.getIsRequired())
+                .build();
     }
 }

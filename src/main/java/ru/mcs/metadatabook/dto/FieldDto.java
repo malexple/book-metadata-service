@@ -10,30 +10,21 @@ import lombok.NoArgsConstructor;
 @Builder
 @NoArgsConstructor
 @AllArgsConstructor
-@Schema(description = "Метаданные поля")
+@Schema(description = "Метаданные поля объекта")
 public class FieldDto {
 
-    @Schema(description = "ID поля", example = "1")
-    private Integer fieldId;
-
-    @Schema(description = "Системное имя поля", example = "FirstName")
+    @Schema(example = "Title")
     private String fieldName;
 
-    @Schema(description = "Отображаемое имя", example = "First Name")
+    @Schema(example = "Название")
     private String label;
 
-    @Schema(description = "Тип данных", example = "text")
+    @Schema(example = "text")
     private String dataType;
 
-    @Schema(description = "Номер слота в flex-колонках (0-49)", example = "0")
-    private Integer fieldNum;
-
-    @Schema(description = "Индексируемое поле", example = "true")
+    @Schema(example = "true")
     private Boolean isIndexed;
 
-    @Schema(description = "Уникальное поле", example = "false")
-    private Boolean isUnique;
-
-    @Schema(description = "Обязательное поле", example = "false")
+    @Schema(example = "false")
     private Boolean isRequired;
 }

@@ -19,10 +19,9 @@ import java.util.UUID;
 
 /**
  * Главное хранилище (heap) — flex-колонки value0..value49.
- * PK = (org_id, guid), таблица партиционирована по org_id (см. V2, V6).
- *
- * sourcesMeta — provenance каждого слота: откуда взято значение (litres/ozon/ocr/manual)
- * и когда обновлено. Формат: {"<fieldNum>": {"source": ..., "updated_at": ..., "confidence": ...}}.
+ * Соответствует ТОЧНО схеме V2__create_data_and_indexes.sql: без partition,
+ * без created_by/modified_by/deleted_by (их нет в лаконичной схеме — раньше
+ * они попали сюда по инерции из демо-проекта Pivot и ломали INSERT/UPDATE).
  */
 @Entity
 @Table(name = "mt_data")
@@ -106,22 +105,13 @@ public class MtData {
     @Column(name = "deleted_at")
     private OffsetDateTime deletedAt;
 
-    @Column(name = "deleted_by")
-    private UUID deletedBy;
-
     @Column(name = "created_at")
     @Builder.Default
     private OffsetDateTime createdAt = OffsetDateTime.now();
 
-    @Column(name = "created_by")
-    private UUID createdBy;
-
     @Column(name = "modified_at")
     @Builder.Default
     private OffsetDateTime modifiedAt = OffsetDateTime.now();
-
-    @Column(name = "modified_by")
-    private UUID modifiedBy;
 
     public Integer getOrgId() {
         return id != null ? id.getOrgId() : null;

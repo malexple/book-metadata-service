@@ -13,6 +13,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+/**
+ * Работа с метаданными объектов/полей. Является единственным местом,
+ * где происходит маппинг "человеческое имя поля" -> "field_num" (слот в mt_data).
+ */
 @Service
 @RequiredArgsConstructor
 @Slf4j
@@ -28,7 +32,7 @@ public class MetadataService {
 
     public MtObject getObjectByName(Integer orgId, String objName) {
         return objectRepository.findByOrgIdAndObjName(orgId, objName)
-                .orElseThrow(() -> new RuntimeException("Object not found: " + objName));
+                .orElseThrow(() -> new IllegalArgumentException("Object not found: " + objName));
     }
 
     public List<MtField> getFieldsByObject(Integer orgId, Integer objId) {
@@ -39,17 +43,20 @@ public class MetadataService {
         return fieldRepository.findByOrgIdAndObjIdAndIsIndexedTrue(orgId, objId);
     }
 
-    public List<MtField> getUniqueFields(Integer orgId, Integer objId) {
-        return fieldRepository.findByOrgIdAndObjIdAndIsUniqueTrue(orgId, objId);
-    }
-
-    public Map<String, MtField> getFieldMap(Integer orgId, Integer objId) {
+    /** fieldName -> MtField, для быстрого маппинга ?fields=title,isbn в слоты. */
+    public Map<String, MtField> getFieldMapByName(Integer orgId, Integer objId) {
         return getFieldsByObject(orgId, objId).stream()
-                .collect(Collectors.toMap(MtField::getFieldName, f -> f));
+                .collect(Collectors.toMap(f -> f.getFieldName().toLowerCase(), f -> f));
     }
 
+    /** fieldNum -> MtField, для построения ответа по значениям слотов. */
     public Map<Integer, MtField> getFieldMapBySlot(Integer orgId, Integer objId) {
         return getFieldsByObject(orgId, objId).stream()
                 .collect(Collectors.toMap(MtField::getFieldNum, f -> f));
+    }
+
+    public MtField getFieldByName(Integer orgId, Integer objId, String fieldName) {
+        return fieldRepository.findByOrgIdAndObjIdAndFieldName(orgId, objId, fieldName)
+                .orElseThrow(() -> new IllegalArgumentException("Field not found: " + fieldName));
     }
 }

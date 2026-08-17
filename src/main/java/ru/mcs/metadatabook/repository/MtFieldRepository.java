@@ -11,6 +11,5 @@ import java.util.Optional;
 public interface MtFieldRepository extends JpaRepository<MtField, Integer> {
     List<MtField> findByOrgIdAndObjId(Integer orgId, Integer objId);
     List<MtField> findByOrgIdAndObjIdAndIsIndexedTrue(Integer orgId, Integer objId);
-    List<MtField> findByOrgIdAndObjIdAndIsUniqueTrue(Integer orgId, Integer objId);
     Optional<MtField> findByOrgIdAndObjIdAndFieldName(Integer orgId, Integer objId, String fieldName);
 }
