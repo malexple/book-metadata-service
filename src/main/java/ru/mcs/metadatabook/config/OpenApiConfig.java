@@ -17,12 +17,15 @@ public class OpenApiConfig {
     public OpenAPI openAPI() {
         return new OpenAPI()
                 .info(new Info()
-                        .title("Pivot Multitenancy API")
-                        .description("API для работы с мультитенантной pivot-моделью данных по архитектуре Force.com")
+                        .title("Book Metadata Service API")
+                        .description("Сервис агрегации и раздачи метаданных книг (ISBN, автор, обложка и т.д.) " +
+                                "с гибким выбором полей через ?fields=, автоматическим обогащением из открытых " +
+                                "источников (Open Library, Google Books, FantLab, опционально LibGen) и очередью " +
+                                "unresolved_lookup для книг, не найденных ни в одном источнике.")
                         .version("1.0.0")
                         .contact(new Contact()
-                                .name("MCS Team")
-                                .email("dev@mcs.ru"))
+                                .name("Simple Complex")
+                                .email("malexple@gmail.ru"))
                         .license(new License()
                                 .name("Apache 2.0")
                                 .url("https://www.apache.org/licenses/LICENSE-2.0")))

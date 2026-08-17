@@ -8,7 +8,6 @@ import org.springframework.web.bind.annotation.*;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.service.ApiKeyService;
 import ru.mcs.metadatabook.service.BookQueryService;
-import ru.mcs.metadatabook.service.LitresEnrichmentService;
 import ru.mcs.metadatabook.service.PublicSourcesEnrichmentService;
 
 import java.util.Map;
@@ -19,8 +18,6 @@ import java.util.Map;
  * /public/by-isbn — Open Library -> Google Books, полностью бесплатно и без ключей,
  * основной рабочий путь на текущем этапе.
  *
- * /litres/by-isbn, /litres/by-title — требуют app_id/secret_key от Litres
- * (партнёрская регистрация), пока не сконфигурированы — вернут unresolved.
  */
 @RestController
 @RequestMapping("/api/v1/enrichment")
@@ -30,7 +27,6 @@ public class EnrichmentController {
 
     private final ApiKeyService apiKeyService;
     private final PublicSourcesEnrichmentService publicSourcesEnrichmentService;
-    private final LitresEnrichmentService litresEnrichmentService;
     private final BookQueryService bookQueryService;
 
     @Operation(summary = "Найти книгу по ISBN в открытых источниках (Open Library -> Google Books)")
@@ -41,29 +37,6 @@ public class EnrichmentController {
 
         Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
         MtData result = publicSourcesEnrichmentService.enrichByIsbn(orgId, isbn);
-        return respond(orgId, result);
-    }
-
-    @Operation(summary = "Найти книгу в Litres по ISBN (требует app_id/secret_key)")
-    @PostMapping("/litres/by-isbn")
-    public ResponseEntity<Map<String, Object>> enrichLitresByIsbn(
-            @RequestParam String apiKey,
-            @RequestParam String isbn) {
-
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
-        MtData result = litresEnrichmentService.enrichByIsbn(orgId, isbn);
-        return respond(orgId, result);
-    }
-
-    @Operation(summary = "Найти книгу в Litres по названию (требует app_id/secret_key)")
-    @PostMapping("/litres/by-title")
-    public ResponseEntity<Map<String, Object>> enrichLitresByTitle(
-            @RequestParam String apiKey,
-            @RequestParam String title,
-            @RequestParam(required = false) String author) {
-
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
-        MtData result = litresEnrichmentService.enrichByTitle(orgId, title, author);
         return respond(orgId, result);
     }
 

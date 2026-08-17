@@ -40,14 +40,6 @@ google:
     # APIs & Services -> Library -> найти "Books API" -> Enable ->
     # Credentials -> Create Credentials -> API Key. Карта не требуется.
     api-key:
-litres:
-  base-url: https://catalit.litres.ru/catalitv2
-  # app-id и secret-key — из партнёрского кабинета Litres. Для r_search_arts
-  # не обязательны, но без них строже лимит частоты запросов (см. LitresProperties).
-  app-id:
-  secret-key:
-  enabled: true
-  min-request-interval-ms: 1100
 
 libgen:
   enabled: false   # осознанный opt-in — юридически серая зона, включайте сами
