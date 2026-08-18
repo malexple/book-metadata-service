@@ -15,9 +15,16 @@ import java.util.Map;
 /**
  * Ручной запуск обогащения из внешних источников.
  *
- * /public/by-isbn — Open Library -> Google Books, полностью бесплатно и без ключей,
- * основной рабочий путь на текущем этапе.
+ * /public/by-isbn  — Open Library -> Google Books -> FantLab -> LibGen -> LLM fallback.
+ *                     Основной путь, когда ISBN известен.
  *
+ * /public/by-title — тот же набор источников (кроме LibGen — его API не умеет
+ *                     искать по названию), для изданий БЕЗ ISBN — старые советские
+ *                     книги, малотиражные технические справочники и т.п.
+ *                     Точность ниже: совпадение по названию не гарантирует то самое
+ *                     издание, особенно для книг с общими/родовыми названиями —
+ *                     рекомендуется сверять AuthorName/PublishedYear вручную
+ *                     перед тем, как доверять результату.
  */
 @RestController
 @RequestMapping("/api/v1/enrichment")
@@ -29,7 +36,7 @@ public class EnrichmentController {
     private final PublicSourcesEnrichmentService publicSourcesEnrichmentService;
     private final BookQueryService bookQueryService;
 
-    @Operation(summary = "Найти книгу по ISBN в открытых источниках (Open Library -> Google Books)")
+    @Operation(summary = "Найти книгу по ISBN в открытых источниках (Open Library -> Google Books -> FantLab -> LibGen -> LLM fallback)")
     @PostMapping("/public/by-isbn")
     public ResponseEntity<Map<String, Object>> enrichPublicByIsbn(
             @RequestParam String apiKey,
@@ -37,6 +44,17 @@ public class EnrichmentController {
 
         Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
         MtData result = publicSourcesEnrichmentService.enrichByIsbn(orgId, isbn);
+        return respond(orgId, result);
+    }
+
+    @Operation(summary = "Найти книгу по названию, когда ISBN неизвестен (старые издания, книги без ISBN)")
+    @PostMapping("/public/by-title")
+    public ResponseEntity<Map<String, Object>> enrichPublicByTitle(
+            @RequestParam String apiKey,
+            @RequestParam String title) {
+
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        MtData result = publicSourcesEnrichmentService.enrichByTitle(orgId, title);
         return respond(orgId, result);
     }
 

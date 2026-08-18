@@ -1,3 +1,6 @@
+server:
+  port: 8081
+
 spring:
   application:
     name: book-metadata-service
@@ -34,6 +37,7 @@ book:
   api:
     # Временный статичный ключ на старте. Позже заменить на таблицу api_keys.
     static-api-key: dev-local-key-change-me
+
 google:
   books:
     # Получить бесплатно: console.cloud.google.com -> New Project ->
@@ -44,6 +48,19 @@ google:
 libgen:
   enabled: false   # осознанный opt-in — юридически серая зона, включайте сами
   base-url: https://libgen.li/json.php
+
+llm:
+  fallback:
+    # Крайний источник метаданных (SearXNG + локальная LLM через Ollama).
+    # Включайте только после проверки связки на тестовых запросах —
+    # confidence сознательно ниже LibGen, требует ручной модерации записей
+    # со статусом enriched_llm_fallback_needs_review.
+    enabled: false
+    searxng-url: http://localhost:8080
+    ollama-url: http://localhost:11434
+    model: qwen2.5:14b
+    confidence: 0.3
+    timeout-seconds: 180
 
 management:
   endpoints:
