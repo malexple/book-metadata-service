@@ -51,14 +51,15 @@ libgen:
 
 llm:
   fallback:
-    # Крайний источник метаданных (SearXNG + локальная LLM через Ollama).
-    # Включайте только после проверки связки на тестовых запросах —
-    # confidence сознательно ниже LibGen, требует ручной модерации записей
-    # со статусом enriched_llm_fallback_needs_review.
-    enabled: false
+    # ВКЛЮЧЕНО для тестирования. Результаты идут НЕ в mt_data напрямую,
+    # а в таблицу llm_suggestions на ручную модерацию (см. LlmSuggestion,
+    # EnrichmentController.listSuggestions/approveSuggestion).
+    enabled: true
     searxng-url: http://localhost:8080
     ollama-url: http://localhost:11434
-    model: qwen2.5:14b
+    # llama3.2:3b — модель, проверенная на этой машине (8 ГБ RAM) без OOM.
+    # На сервере с 16 ядрами/100 ГБ RAM смените на более крупную (qwen2.5:14b и т.п.).
+    model: llama3.2:3b
     confidence: 0.3
     timeout-seconds: 180
 

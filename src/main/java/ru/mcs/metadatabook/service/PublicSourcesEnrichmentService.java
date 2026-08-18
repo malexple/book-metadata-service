@@ -11,10 +11,13 @@ import ru.mcs.metadatabook.client.GoogleBooksClient;
 import ru.mcs.metadatabook.client.LibGenClient;
 import ru.mcs.metadatabook.client.LlmFallbackClient;
 import ru.mcs.metadatabook.client.OpenLibraryClient;
+import ru.mcs.metadatabook.entity.LlmSuggestion;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.entity.UnresolvedLookup;
+import ru.mcs.metadatabook.repository.LlmSuggestionRepository;
 import ru.mcs.metadatabook.repository.UnresolvedLookupRepository;
 
+import java.math.BigDecimal;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -27,16 +30,19 @@ import java.util.stream.StreamSupport;
 /**
  * Обогащение метаданных из открытых источников.
  *
- * Два входных сценария:
- *  - enrichByIsbn: Open Library -> Google Books -> FantLab -> LibGen (если включён)
- *    -> LLM fallback (если включён) -> unresolved_lookup.
- *  - enrichByTitle: для изданий БЕЗ ISBN (старые советские книги и т.п.).
- *    Open Library (search.json) -> Google Books (intitle) -> FantLab -> LLM fallback.
- *    LibGen сюда не входит — его json.php API поддерживает поиск только по ISBN
- *    (addkeys=isbn), поиска по названию у него нет.
+ * Порядок для enrichByIsbn:  Open Library -> Google Books -> FantLab -> LibGen
+ *   (если включён) -> LLM fallback (если включён) -> unresolved_lookup.
+ * Порядок для enrichByTitle: Open Library -> Google Books -> FantLab ->
+ *   LLM fallback (если включён) -> unresolved_lookup. (LibGen не участвует —
+ *   его API ищет только по ISBN.)
  *
- * Дедупликация записей идёт по параметрическому полю (ISBN либо Title) —
- * см. persist(orgId, dedupeFieldName, dedupeValue, ...).
+ * ВАЖНО: структурированные источники (Open Library/Google Books/FantLab/LibGen)
+ * по-прежнему пишутся в mt_data сразу — они возвращают точные, проверяемые данные.
+ * Результаты LLM fallback НЕ пишутся в mt_data напрямую — они складываются в
+ * таблицу llm_suggestions на ручную модерацию (см. LlmSuggestion,
+ * approveSuggestion/rejectSuggestion). Это дополнительный уровень защиты поверх
+ * верификации внутри LlmFallbackClient: даже прошедшие верификацию данные
+ * генеративной модели — низкой достоверности по своей природе.
  */
 @Service
 @RequiredArgsConstructor
@@ -51,6 +57,7 @@ public class PublicSourcesEnrichmentService {
     private final BookQueryService bookQueryService;
     private final BookWriteService bookWriteService;
     private final UnresolvedLookupRepository unresolvedLookupRepository;
+    private final LlmSuggestionRepository llmSuggestionRepository;
 
     @Value("${llm.fallback.enabled:false}")
     private boolean llmFallbackEnabled;
@@ -90,8 +97,10 @@ public class PublicSourcesEnrichmentService {
             JsonNode llmResult = llmFallbackClient.findByIsbn(isbn);
             attempted.add("llm_fallback");
             if (llmResult != null) {
-                log.info("ISBN {} восстановлен через LLM fallback (низкая уверенность, рекомендуется ручная проверка)", isbn);
-                return persist(orgId, "ISBN", isbn, mapLlmFallback(llmResult, isbn), "llm_fallback", llmFallbackConfidence);
+                LlmSuggestion suggestion = saveSuggestion(orgId, isbn, null, llmResult);
+                log.info("ISBN {} восстановлен через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
+                        isbn, suggestion.getId());
+                return null; // не пишем в mt_data — ждём approve
             }
         }
 
@@ -101,10 +110,7 @@ public class PublicSourcesEnrichmentService {
     }
 
     /**
-     * Обогащение по названию — для изданий без ISBN (старые книги, редкие
-     * технические справочники и т.п.). Точность ниже, чем поиск по ISBN,
-     * так как совпадение названия не гарантирует то самое издание —
-     * особенно рискованно для книг с общими/родовыми названиями.
+     * Обогащение по названию — для изданий без ISBN (старые книги и т.п.).
      */
     @Transactional
     public MtData enrichByTitle(Integer orgId, String title) {
@@ -132,8 +138,10 @@ public class PublicSourcesEnrichmentService {
             JsonNode llmResult = llmFallbackClient.findByTitle(title);
             attempted.add("llm_fallback");
             if (llmResult != null) {
-                log.info("Книга '{}' восстановлена через LLM fallback по названию (низкая уверенность, нужна ручная проверка)", title);
-                return persist(orgId, "Title", title, mapLlmFallback(llmResult, null), "llm_fallback", llmFallbackConfidence);
+                LlmSuggestion suggestion = saveSuggestion(orgId, null, title, llmResult);
+                log.info("Книга '{}' восстановлена через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
+                        title, suggestion.getId());
+                return null; // не пишем в mt_data — ждём approve
             }
         }
 
@@ -141,6 +149,69 @@ public class PublicSourcesEnrichmentService {
         log.info("Book '{}' not found by title in any source (attempted: {}), saved to unresolved_lookup", title, attempted);
         return null;
     }
+
+    // ---------- Модерация LLM-предложений ----------
+
+    public List<LlmSuggestion> listSuggestions(Integer orgId, String status) {
+        return llmSuggestionRepository.findByOrgIdAndStatusOrderByCreatedAtDesc(orgId, status);
+    }
+
+    /** Принимает предложение LLM и только теперь пишет данные в mt_data. */
+    @Transactional
+    public MtData approveSuggestion(Integer orgId, Long suggestionId) {
+        LlmSuggestion suggestion = llmSuggestionRepository.findById(suggestionId)
+                .orElseThrow(() -> new IllegalArgumentException("Suggestion not found: " + suggestionId));
+
+        if (!"pending".equals(suggestion.getStatus())) {
+            throw new IllegalArgumentException("Suggestion already reviewed: " + suggestionId + " (status=" + suggestion.getStatus() + ")");
+        }
+
+        String dedupeField = suggestion.getIsbn() != null ? "ISBN" : "Title";
+        String dedupeValue = suggestion.getIsbn() != null ? suggestion.getIsbn() : suggestion.getQueryTitle();
+
+        MtData saved = persist(orgId, dedupeField, dedupeValue, suggestion.getSuggestedValues(),
+                "llm_fallback", llmFallbackConfidence);
+
+        suggestion.setStatus("approved");
+        suggestion.setReviewedAt(OffsetDateTime.now());
+        suggestion.setResultingGuid(saved.getGuid());
+        llmSuggestionRepository.save(suggestion);
+
+        return saved;
+    }
+
+    @Transactional
+    public void rejectSuggestion(Integer orgId, Long suggestionId) {
+        LlmSuggestion suggestion = llmSuggestionRepository.findById(suggestionId)
+                .orElseThrow(() -> new IllegalArgumentException("Suggestion not found: " + suggestionId));
+
+        if (!"pending".equals(suggestion.getStatus())) {
+            throw new IllegalArgumentException("Suggestion already reviewed: " + suggestionId + " (status=" + suggestion.getStatus() + ")");
+        }
+
+        suggestion.setStatus("rejected");
+        suggestion.setReviewedAt(OffsetDateTime.now());
+        llmSuggestionRepository.save(suggestion);
+    }
+
+    private LlmSuggestion saveSuggestion(Integer orgId, String isbn, String queryTitle, JsonNode llmResult) {
+        Map<String, String> values = mapLlmFallback(llmResult, isbn);
+        String sourceUrl = textOrNull(llmResult, "source_url");
+
+        LlmSuggestion suggestion = LlmSuggestion.builder()
+                .orgId(orgId)
+                .isbn(isbn)
+                .queryTitle(queryTitle)
+                .suggestedValues(values)
+                .sourceUrl(sourceUrl)
+                .confidence(BigDecimal.valueOf(llmFallbackConfidence))
+                .status("pending")
+                .build();
+
+        return llmSuggestionRepository.save(suggestion);
+    }
+
+    // ---------- Персист структурированных источников ----------
 
     private MtData persist(Integer orgId, String dedupeFieldName, String dedupeValue,
                            Map<String, String> values, String source, double confidence) {
@@ -187,13 +258,6 @@ public class PublicSourcesEnrichmentService {
         return values;
     }
 
-    /**
-     * Маппинг результата Open Library search.json (findByTitle) — формат ответа
-     * отличается от findByIsbn: author_name/publisher — плоские массивы строк,
-     * first_publish_year вместо publish_date, cover_i (числовой id) вместо
-     * объекта cover, isbn — массив (что удобно: иногда можно найти ISBN книги,
-     * который отсутствовал у вас изначально).
-     */
     private Map<String, String> mapOpenLibrarySearch(JsonNode doc) {
         Map<String, String> values = new LinkedHashMap<>();
         putIfPresent(values, "Title", textOrNull(doc, "title"));
@@ -292,10 +356,6 @@ public class PublicSourcesEnrichmentService {
         return values;
     }
 
-    /**
-     * Маппинг результата LLM fallback. source_url сохраняется в поле SourceUrl
-     * для ручной проверки — этот источник наименее надёжен из всех.
-     */
     private Map<String, String> mapLlmFallback(JsonNode result, String isbn) {
         Map<String, String> values = new LinkedHashMap<>();
         putIfPresent(values, "ISBN", isbn != null ? isbn : textOrNull(result, "isbn"));
