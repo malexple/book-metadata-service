@@ -6,11 +6,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
-import ru.mcs.metadatabook.client.FantLabClient;
-import ru.mcs.metadatabook.client.GoogleBooksClient;
-import ru.mcs.metadatabook.client.LibGenClient;
-import ru.mcs.metadatabook.client.LlmFallbackClient;
-import ru.mcs.metadatabook.client.OpenLibraryClient;
+import ru.mcs.metadatabook.client.*;
 import ru.mcs.metadatabook.entity.LlmSuggestion;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.entity.UnresolvedLookup;
@@ -54,6 +50,7 @@ public class PublicSourcesEnrichmentService {
     private final FantLabClient fantLabClient;
     private final LibGenClient libGenClient;
     private final LlmFallbackClient llmFallbackClient;
+    private final SiglaClient siglaClient;
     private final BookQueryService bookQueryService;
     private final BookWriteService bookWriteService;
     private final UnresolvedLookupRepository unresolvedLookupRepository;
@@ -413,5 +410,97 @@ public class PublicSourcesEnrichmentService {
         if (node == null) return null;
         JsonNode value = node.get(field);
         return (value == null || value.isNull()) ? null : value.asText();
+    }
+
+    /**
+     * Обогащение по названию с возвратом ВСЕХ найденных кандидатов, а не одного
+     * "угаданного". Для родовых заглавий (словари, справочники и т.п.) один и тот же
+     * запрос закономерно совпадает с десятками разных изданий — сервис не имеет
+     * достаточно контекста, чтобы выбрать среди них правильное (это может сделать
+     * только вызывающее приложение или человек, у которого перед глазами конкретный
+     * экземпляр книги).
+     *
+     * Каждый кандидат сохраняется как отдельная карточка mt_data (мы всё равно ещё
+     * не храним ни одной из них). Если кандидатов больше одного — все они помечаются
+     * SourceStatus = "needs_review_multiple_candidates", чтобы вызывающая сторона
+     * могла:
+     *   - показать пользователю список карточек для выбора нужной;
+     *   - либо на своей стороне сопоставить с дополнительными данными (штрихкод,
+     *     фото, год на титульном листе) и оставить одну, удалив/пометив остальные.
+     *
+     * Дедупликация каждого кандидата происходит независимо — по точному совпадению
+     * поля Title (см. persist()), поэтому повторный запуск того же поиска не
+     * создаёт дублей, а дообогащает уже сохранённые карточки.
+     */
+    @Transactional
+    public List<MtData> enrichByTitleMultiple(Integer orgId, String title) {
+        List<MtData> saved = new ArrayList<>();
+        List<String> attempted = new ArrayList<>();
+
+        JsonNode olDoc = openLibraryClient.findByTitle(title);
+        attempted.add("openlibrary");
+        if (olDoc != null) {
+            saved.add(persist(orgId, "Title", title, mapOpenLibrarySearch(olDoc), "openlibrary", 0.5));
+        }
+
+        JsonNode gbVolume = googleBooksClient.searchByTitle(title, 1);
+        attempted.add("googlebooks");
+        if (gbVolume != null) {
+            saved.add(persist(orgId, "Title", title, mapGoogleBooks(gbVolume, null), "googlebooks", 0.5));
+        }
+
+        // Sigla может вернуть много кандидатов для родовых заглавий — это и есть штатный случай,
+        // а не ошибка, которую нужно "разрешать" угадыванием.
+        List<SiglaClient.SiglaRecord> siglaRecords = siglaClient.search(title);
+        attempted.add("sigla");
+        if (!siglaRecords.isEmpty()) {
+            boolean ambiguous = siglaRecords.size() > 1;
+            for (SiglaClient.SiglaRecord r : siglaRecords) {
+                Map<String, String> values = mapSigla(r);
+                if (ambiguous) {
+                    values.put("SourceStatus", "needs_review_multiple_candidates");
+                }
+                // Дедупим по точному заглавию конкретного издания (оно у каждого кандидата разное,
+                // включая подзаголовок/составителей) — НЕ по исходному запросу title.
+                saved.add(persist(orgId, "Title", r.title(), values, "sigla", ambiguous ? 0.3 : 0.55));
+            }
+            log.info("Sigla: для '{}' сохранено {} карточек-кандидатов (ambiguous={})",
+                    title, siglaRecords.size(), ambiguous);
+        }
+
+        JsonNode flEdition = fantLabClient.findByTitle(title);
+        attempted.add("fantlab");
+        if (flEdition != null) {
+            saved.add(persist(orgId, "Title", title, mapFantLab(flEdition, null), "fantlab", 0.5));
+        }
+
+        if (saved.isEmpty()) {
+            if (llmFallbackEnabled) {
+                JsonNode llmResult = llmFallbackClient.findByTitle(title);
+                attempted.add("llm_fallback");
+                if (llmResult != null) {
+                    LlmSuggestion suggestion = saveSuggestion(orgId, null, title, llmResult);
+                    log.info("Книга '{}' восстановлена через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
+                            title, suggestion.getId());
+                    return saved; // пусто — предложение ушло на модерацию, не в mt_data напрямую
+                }
+            }
+            saveUnresolved(orgId, null, title, null, attempted);
+            log.info("Book '{}' not found by title in any source (attempted: {}), saved to unresolved_lookup", title, attempted);
+        }
+
+        return saved;
+    }
+
+    private Map<String, String> mapSigla(SiglaClient.SiglaRecord record) {
+        Map<String, String> values = new LinkedHashMap<>();
+        putIfPresent(values, "ISBN", record.isbn());
+        putIfPresent(values, "Title", record.title());
+        putIfPresent(values, "AuthorName", record.author());
+        putIfPresent(values, "Publisher", record.publisher());
+        putIfPresent(values, "PublishedYear", record.year());
+
+        values.put("SourceStatus", "enriched_sigla_nb_msu");
+        return values;
     }
 }

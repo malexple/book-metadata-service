@@ -10,6 +10,7 @@ import org.springframework.stereotype.Repository;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.entity.MtDataId;
 
+import java.time.OffsetDateTime;
 import java.util.List;
 import java.util.UUID;
 
@@ -32,4 +33,12 @@ public interface MtDataRepository extends JpaRepository<MtData, MtDataId> {
      */
     @Query("SELECT d FROM MtData d WHERE d.id.orgId = :orgId AND d.id.guid IN :guids AND d.isDeleted = false")
     List<MtData> findByOrgIdAndGuidIn(@Param("orgId") Integer orgId, @Param("guids") List<UUID> guids);
+
+    @Query("SELECT COUNT(d) FROM MtData d WHERE d.id.orgId = :orgId AND d.objId = :objId AND d.isDeleted = false")
+    long countByOrgIdAndObjId(@Param("orgId") Integer orgId, @Param("objId") Integer objId);
+
+    @Query("SELECT COUNT(d) FROM MtData d WHERE d.id.orgId = :orgId AND d.objId = :objId " +
+            "AND d.isDeleted = false AND d.createdAt >= :since")
+    long countByOrgIdAndObjIdAndCreatedAtAfter(@Param("orgId") Integer orgId, @Param("objId") Integer objId,
+                                               @Param("since") OffsetDateTime since);
 }

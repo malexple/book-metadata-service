@@ -34,6 +34,11 @@ public class ApiKey {
     @Column(name = "key_value", nullable = false, unique = true)
     private String keyValue;
 
+    @Column(name = "scope", nullable = false)
+    @Builder.Default
+    private String scope = "PARTNER_WRITE"; // храним как String (не @Enumerated) —
+    // проще с ALTER TABLE/ручными INSERT, конвертация через ApiKeyScope.valueOf() в сервисе.
+
     @Column(name = "label")
     private String label;
 

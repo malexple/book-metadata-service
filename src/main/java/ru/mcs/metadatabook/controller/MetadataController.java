@@ -11,8 +11,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 import ru.mcs.metadatabook.dto.FieldDto;
+import ru.mcs.metadatabook.entity.ApiKeyScope;
 import ru.mcs.metadatabook.entity.MtField;
 import ru.mcs.metadatabook.entity.MtObject;
+import ru.mcs.metadatabook.service.ApiKeyService;
 import ru.mcs.metadatabook.service.MetadataService;
 
 import java.util.List;
@@ -29,22 +31,26 @@ import java.util.List;
 public class MetadataController {
 
     private final MetadataService metadataService;
+    private final ApiKeyService apiKeyService;
 
     @Operation(summary = "Список объектов (Book, Author, Magazine...)")
     @GetMapping("/objects")
     public ResponseEntity<List<MtObject>> getObjects(
+            @RequestParam String apiKey,
             @Parameter(example = "1") @RequestParam(defaultValue = "1") Integer orgId) {
-        return ResponseEntity.ok(metadataService.getObjectsByOrg(orgId));
+        Integer resolvedOrgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.ADMIN);
+        return ResponseEntity.ok(metadataService.getObjectsByOrg(resolvedOrgId));
     }
 
     @Operation(summary = "Поля объекта — источник для чекбоксов в UI-конструкторе")
     @GetMapping("/objects/{objectName}/fields")
     public ResponseEntity<List<FieldDto>> getFields(
+            @RequestParam String apiKey,
             @Parameter(example = "1") @RequestParam(defaultValue = "1") Integer orgId,
             @Parameter(example = "Book") @PathVariable String objectName) {
-
-        MtObject object = metadataService.getObjectByName(orgId, objectName);
-        List<FieldDto> dtos = metadataService.getFieldsByObject(orgId, object.getObjId()).stream()
+        Integer resolvedOrgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.ADMIN);
+        MtObject object = metadataService.getObjectByName(resolvedOrgId, objectName);
+        List<FieldDto> dtos = metadataService.getFieldsByObject(resolvedOrgId, object.getObjId()).stream()
                 .map(this::toDto)
                 .toList();
         return ResponseEntity.ok(dtos);

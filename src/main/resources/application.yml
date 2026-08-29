@@ -30,6 +30,14 @@ spring:
     baseline-on-migrate: true
   thymeleaf:
     cache: false
+  cache:
+    jcache:
+      provider: com.github.benmanes.caffeine.jcache.spi.CaffeineCachingProvider
+    cache-names:
+      - public-search-buckets
+      - partner-buckets
+    caffeine:
+      spec: maximumSize=100000,expireAfterAccess=3600s
 
 book:
   pivot:
@@ -37,6 +45,7 @@ book:
   api:
     # Временный статичный ключ на старте. Позже заменить на таблицу api_keys.
     static-api-key: dev-local-key-change-me
+    public-api-key: public-books-2026-change-me
 
 google:
   books:
@@ -83,3 +92,31 @@ springdoc:
     tags-sorter: alpha
     operations-sorter: method
   default-produces-media-type: application/json
+
+bucket4j:
+  enabled: true
+  cache-to-use: jcache
+  filters:
+    - cache-name: public-search-buckets
+      url: /api/v1/public/.*
+      strategy: first
+      http-response-body: '{"error": "Too Many Requests", "message": "Rate limit exceeded, try again shortly"}'
+      rate-limits:
+        - cache-key: "getRemoteAddr()"
+          bandwidths:
+            - capacity: 10
+              time: 10
+              unit: seconds
+            - capacity: 60
+              time: 1
+              unit: minutes
+
+    - cache-name: partner-buckets
+      url: /api/v1/(books|enrichment)/.*
+      strategy: first
+      rate-limits:
+        - cache-key: "getHeader('X-Api-Key') != null ? getHeader('X-Api-Key') : getParameter('apiKey')"
+          bandwidths:
+            - capacity: 300
+              time: 1
+              unit: minutes

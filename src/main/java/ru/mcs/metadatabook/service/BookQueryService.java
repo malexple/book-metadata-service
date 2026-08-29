@@ -110,4 +110,17 @@ public class BookQueryService {
             default -> rawValue;
         };
     }
+
+    public List<MtData> findByIndexedFieldContaining(Integer orgId, Integer objId, String fieldName, String value) {
+        MtField field = metadataService.getFieldByName(orgId, objId, fieldName);
+        if (!Boolean.TRUE.equals(field.getIsIndexed())) {
+            throw new IllegalArgumentException("Field is not indexed and cannot be searched: " + fieldName);
+        }
+        String pattern = "%" + value.toLowerCase().trim() + "%";
+        List<MtIndex> matches = indexRepository.findByStringValueContaining(
+                orgId, objId, field.getFieldNum(), pattern);
+        List<UUID> guids = matches.stream().map(MtIndex::getGuid).toList();
+        if (guids.isEmpty()) return List.of();
+        return dataRepository.findByOrgIdAndGuidIn(orgId, guids);
+    }
 }

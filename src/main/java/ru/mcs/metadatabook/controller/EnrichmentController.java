@@ -5,6 +5,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import ru.mcs.metadatabook.entity.ApiKeyScope;
 import ru.mcs.metadatabook.entity.LlmSuggestion;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.service.ApiKeyService;
@@ -42,7 +43,7 @@ public class EnrichmentController {
             @RequestParam String apiKey,
             @RequestParam String isbn) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PARTNER_WRITE);
         MtData result = publicSourcesEnrichmentService.enrichByIsbn(orgId, isbn);
         return respond(orgId, result);
     }
@@ -53,7 +54,7 @@ public class EnrichmentController {
             @RequestParam String apiKey,
             @RequestParam String title) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PARTNER_WRITE);
         MtData result = publicSourcesEnrichmentService.enrichByTitle(orgId, title);
         return respond(orgId, result);
     }
@@ -64,7 +65,7 @@ public class EnrichmentController {
             @RequestParam String apiKey,
             @RequestParam(defaultValue = "pending") String status) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.ADMIN);
         return ResponseEntity.ok(publicSourcesEnrichmentService.listSuggestions(orgId, status));
     }
 
@@ -74,7 +75,7 @@ public class EnrichmentController {
             @RequestParam String apiKey,
             @PathVariable Long id) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.ADMIN);
         MtData result = publicSourcesEnrichmentService.approveSuggestion(orgId, id);
 
         var book = bookQueryService.getBookObject(orgId);
@@ -88,7 +89,7 @@ public class EnrichmentController {
             @RequestParam String apiKey,
             @PathVariable Long id) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.ADMIN);
         publicSourcesEnrichmentService.rejectSuggestion(orgId, id);
         return ResponseEntity.ok(Map.of("rejected", true, "id", id));
     }

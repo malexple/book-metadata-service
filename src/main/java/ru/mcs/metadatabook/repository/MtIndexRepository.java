@@ -28,4 +28,9 @@ public interface MtIndexRepository extends JpaRepository<MtIndex, Long> {
     @Modifying
     @Query("DELETE FROM MtIndex i WHERE i.orgId = :orgId AND i.guid = :guid")
     void deleteByOrgIdAndGuid(@Param("orgId") Integer orgId, @Param("guid") UUID guid);
+
+    @Query("SELECT COUNT(DISTINCT i.stringValue) FROM MtIndex i " +
+            "WHERE i.orgId = :orgId AND i.objId = :objId AND i.fieldNum = :fieldNum AND i.stringValue IS NOT NULL")
+    long countDistinctStringValue(@Param("orgId") Integer orgId, @Param("objId") Integer objId,
+                                  @Param("fieldNum") Integer fieldNum);
 }

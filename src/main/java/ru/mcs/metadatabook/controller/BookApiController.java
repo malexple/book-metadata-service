@@ -8,6 +8,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import ru.mcs.metadatabook.dto.CreateBookRequest;
+import ru.mcs.metadatabook.entity.ApiKeyScope;
 import ru.mcs.metadatabook.entity.MtData;
 import ru.mcs.metadatabook.entity.MtField;
 import ru.mcs.metadatabook.entity.MtObject;
@@ -48,7 +49,7 @@ public class BookApiController {
             @RequestParam(defaultValue = "0") int page,
             @RequestParam(defaultValue = "50") int size) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PUBLIC_READ);
         MtObject book = bookQueryService.getBookObject(orgId);
         List<MtField> requested = bookQueryService.resolveRequestedFields(orgId, book.getObjId(), fields);
 
@@ -68,7 +69,7 @@ public class BookApiController {
             @RequestParam String value,
             @RequestParam(required = false) String fields) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PUBLIC_READ);
         MtObject book = bookQueryService.getBookObject(orgId);
         List<MtField> requested = bookQueryService.resolveRequestedFields(orgId, book.getObjId(), fields);
 
@@ -87,7 +88,7 @@ public class BookApiController {
             @PathVariable UUID guid,
             @RequestParam(required = false) String fields) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PUBLIC_READ);
         MtObject book = bookQueryService.getBookObject(orgId);
         List<MtField> requested = bookQueryService.resolveRequestedFields(orgId, book.getObjId(), fields);
 
@@ -105,7 +106,7 @@ public class BookApiController {
             @RequestParam String apiKey,
             @Valid @RequestBody CreateBookRequest request) {
 
-        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey);
+        Integer orgId = apiKeyService.resolveOrgIdOrThrow(apiKey, ApiKeyScope.PARTNER_WRITE);
         MtData saved = bookWriteService.createBook(orgId, request.getValues(), request.getSource(), request.getConfidence());
 
         MtObject book = bookQueryService.getBookObject(orgId);
