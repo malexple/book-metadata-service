@@ -1,16 +1,21 @@
 package ru.mcs.metadatabook.client;
 
+import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
 import org.jsoup.select.Elements;
+import org.springframework.http.client.ClientHttpRequestFactory;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
+import ru.mcs.metadatabook.config.SiglaProperties;
 
 import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
@@ -23,44 +28,38 @@ import java.util.regex.Pattern;
  * Клиент для sigla.ru (Библиотечная Компьютерная Сеть, НБ МГУ им. Ломоносова) —
  * публичный веб-метапоиск по нескольким российским библиотечным каталогам.
  *
- * НЕ официальный API — HTML-скрапинг legacy JSP-приложения. Известные подводные камни
- * (все обнаружены эмпирически, см. историю дебага):
+ * НЕ официальный API — HTML-скрапинг legacy JSP-приложения, поэтому:
+ *   - выключен по умолчанию (sigla.enabled=false, opt-in, как LibGen) — сайт
+ *     создавался для читателей-людей, а не как выделенный API, включайте
+ *     осознанно, понимая это;
+ *   - собственный троттлинг (sigla.min-request-interval-ms, по умолчанию 2000мс) —
+ *     нагрузку на чужую инфраструктуру держим минимальной вне зависимости от
+ *     того, сколько людей одновременно обращаются к НАШЕМУ сервису. Это
+ *     синхронизировано на уровне JVM (synchronized) — при нескольких
+ *     одновременных запросах они выстраиваются в очередь, а не бьют залпом.
  *
+ * Известные подводные камни (все обнаружены эмпирически):
  * 1. URL требует ВСЕХ параметров формы, включая пустые (иначе 500 crash.jsp).
- *    Не пытайтесь "почистить" query string — legacy JSP ожидает их присутствия.
+ * 2. URL передаётся как java.net.URI, а не String (иначе двойное percent-кодирование).
+ * 3. Сервер не шлёт charset в Content-Type — тело читаем как byte[] и
+ *    декодируем сами как UTF-8, иначе Spring откатится на ISO-8859-1.
+ * 4. Ячейка с порядковым номером строки тоже имеет class="table-text" —
+ *    сдвигает индексы: cells.get(0)=номер, (1)=автор, (2)=заглавие, (3)=данные.
+ * 5. Таймауты: 5с/10с на подключение/чтение — сайт нестабилен, видели и
+ *    зависания, и Connection refused при недоступности. Ошибки логируются
+ *    как WARN (не ERROR) — это ОЖИДАЕМЫЙ режим отказа стороннего legacy-сервиса,
+ *    а не баг в нашем коде.
+ * 6. Пагинация: table.jsp отдаёт только первые 20 записей (psz=20/bs=20).
+ * 7. Родовые технические заглавия неразличимы по чистому тексту — см. pickBestMatch
+ *    (Jaccard + бонусы за автора/год, при ничьей — null, не гадаем).
  *
- * 2. URL передаётся в RestClient как готовый java.net.URI, а НЕ как String —
- *    при передаче String Spring прогоняет его через UriComponentsBuilder, который
- *    повторно percent-кодирует уже закодированную кириллицу (%D0%B0 -> %25D0%25B0),
- *    из-за чего поиск молча возвращает 0 записей.
- *
- * 3. Сервер не указывает charset в HTTP-заголовке Content-Type (хотя он есть
- *    в <meta> внутри HTML) — читаем тело как byte[] и декодируем вручную как UTF-8,
- *    иначе Spring откатится на ISO-8859-1 (HTTP-спека для text/* без charset) и
- *    кириллица превратится в mojibake. Внешне выглядит как "структура нашлась
- *    (N строк), но совпадений по тексту нет" — score=0.0 везде.
- *
- * 4. Ячейка с порядковым номером строки ("1.", "2.", ...) в разметке ТОЖЕ имеет
- *    class="table-text" — она попадает в td.table-text первым элементом (index 0),
- *    сдвигая индексы: cells.get(0)=номер, (1)=автор, (2)=заглавие, (3)=город/издательство/год.
- *
- * 5. Пагинация: table.jsp с psz=20/bs=20 отдаёт только первые 20 записей;
- *    для полного покрытия (напр. 24 из 24) нужен второй запрос с i=21 и т.д.
- *    Пока не реализовано — берём только первую страницу.
- *
- * 6. КЛЮЧЕВОЕ ОГРАНИЧЕНИЕ: родовые технические заглавия (напр. "англо-русский
- *    словарь по вычислительной технике") встречаются подстрокой в десятках разных
- *    изданий разных лет и авторов. Чистое текстовое сравнение НЕ различает их —
- *    приходило 20/20 совпадений с одинаковым score=1.0 по чистому recall.
- *    Поэтому здесь Jaccard (штрафует "лишние" слова в заглавии) + опциональные
- *    бонусы за совпадение автора/года (authorHint/yearHint). Если после учёта
- *    подсказок несколько записей всё ещё делят первое место — метод возвращает
- *    null (лучше не найти, чем подставить не ту книгу), а не берёт первую попавшуюся.
- *
+ * f=7 — код поля "ISBN" в форме sigla.ru (используется в findByIsbn).
+ * f=1016 — "любой элемент" (используется в search(title)/findByTitle).
  * cc=c — каталог "НБ МГУ, Электронный каталог Книг с 1990 г." — единственный
  * эмпирически подтверждённый код на данный момент.
  */
 @Component
+@RequiredArgsConstructor
 @Slf4j
 public class SiglaClient {
 
@@ -75,28 +74,71 @@ public class SiglaClient {
     private static final double TITLE_MATCH_THRESHOLD = 0.55;
     private static final double TIE_EPSILON = 1e-6;
 
+    private final SiglaProperties properties;
+
     private final RestClient restClient = RestClient.builder()
             .defaultHeader("User-Agent", "Mozilla/5.0 (compatible; book-metadata-service/1.0)")
+            .requestFactory(timeoutRequestFactory())
             .build();
+
+    private long lastRequestAtMillis = 0L;
+
+    private static ClientHttpRequestFactory timeoutRequestFactory() {
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout((int) Duration.ofSeconds(5).toMillis());
+        factory.setReadTimeout((int) Duration.ofSeconds(10).toMillis());
+        return factory;
+    }
+
+    // ---------- Поиск по ISBN ----------
+
+    public SiglaRecord findByIsbn(String isbn) {
+        String normalizedIsbn = isbn.replaceAll("[^0-9Xx]", "");
+        List<SiglaRecord> results = searchByField(normalizedIsbn, "7");
+
+        if (results.isEmpty()) return null;
+        if (results.size() == 1) return results.get(0);
+
+        List<SiglaRecord> exactMatches = results.stream()
+                .filter(r -> normalizedIsbn.equalsIgnoreCase(r.isbn()))
+                .toList();
+
+        if (exactMatches.size() == 1) return exactMatches.get(0);
+
+        log.warn("Sigla: неоднозначность по ISBN {} — {} записей, ни одна не выделяется однозначно — не возвращаю",
+                normalizedIsbn, results.size());
+        return null;
+    }
+
+    // ---------- Поиск по названию ----------
 
     public SiglaRecord findByTitle(String title) {
         return findByTitle(title, null, null);
     }
 
-    /**
-     * @param authorHint известная фамилия/автор (из OCR или другого источника) — опционально,
-     *                   но настоятельно рекомендуется для родовых заглавий (словари, справочники).
-     * @param yearHint   известный год издания — опционально, помогает разрешить неоднозначность.
-     */
     public SiglaRecord findByTitle(String title, String authorHint, String yearHint) {
         List<SiglaRecord> records = search(title);
         return pickBestMatch(title, authorHint, yearHint, records);
     }
 
     public List<SiglaRecord> search(String title) {
+        return searchByField(title, "1016");
+    }
+
+    // ---------- Общая механика запроса/парсинга ----------
+
+    private List<SiglaRecord> searchByField(String query, String fieldCode) {
         List<SiglaRecord> results = new ArrayList<>();
-        String rawUrl = BASE_URL + "?o=a&f=1016&t=3&v0="
-                + URLEncoder.encode(title, StandardCharsets.UTF_8)
+
+        if (!properties.isEnabled()) {
+            log.debug("Sigla disabled via sigla.enabled=false, skipping query '{}'", query);
+            return results;
+        }
+
+        throttle();
+
+        String rawUrl = BASE_URL + "?o=a&f=" + fieldCode + "&t=3&v0="
+                + URLEncoder.encode(query, StandardCharsets.UTF_8)
                 + STATIC_PARAMS;
 
         try {
@@ -109,15 +151,14 @@ public class SiglaClient {
             Document doc = Jsoup.parse(html);
 
             if (doc.title() != null && doc.title().contains("Серьезная ошибка")) {
-                log.error("Sigla: сервер вернул crash.jsp для запроса '{}'", title);
+                log.warn("Sigla: сервер вернул crash.jsp для запроса '{}' (field={})", query, fieldCode);
                 return results;
             }
 
             Elements rows = doc.select("tr.table-body");
-            log.debug("Sigla: получено {} строк результатов для '{}'", rows.size(), title);
+            log.debug("Sigla: получено {} строк результатов для '{}' (field={})", rows.size(), query, fieldCode);
 
             for (Element row : rows) {
-                // Индекс 0 в td.table-text — это порядковый номер строки ("1."), не данные.
                 Elements cells = row.select("td.table-text");
                 if (cells.size() < 4) continue;
 
@@ -140,21 +181,40 @@ public class SiglaClient {
                         extractCity(cityPublisherYear),
                         extractPublisher(cityPublisherYear),
                         extractYear(cityPublisherYear),
-                        (isbn == null || isbn.isBlank()) ? null : isbn
+                        (isbn == null || isbn.isBlank()) ? null : isbn.replaceAll("[^0-9Xx]", "")
                 ));
             }
         } catch (Exception e) {
-            log.error("Sigla: ошибка запроса для '{}'", title, e);
+            // WARN, не ERROR: недоступность нестабильного стороннего legacy-сервиса —
+            // ожидаемый режим отказа, не баг в нашем коде (см. класс-комментарий).
+            log.warn("Sigla: ошибка запроса для '{}' (field={}): {}", query, fieldCode, e.getMessage());
         }
 
         return results;
     }
 
     /**
-     * Скоринг: Jaccard-похожесть заглавия (штрафует "лишние" слова, не только
-     * недостающие) + бонус за совпадение автора/года, если подсказки заданы.
-     * При явной ничьей по итоговому скору — возвращает null.
+     * Собственный троттлинг — не чаще одного запроса к sigla.ru за
+     * sigla.min-request-interval-ms миллисекунд, независимо от того, сколько
+     * параллельных запросов сейчас обрабатывает наш сервис. synchronized
+     * гарантирует, что при конкурентных вызовах они выстроятся в очередь,
+     * а не отправят несколько запросов одновременно.
      */
+    private synchronized void throttle() {
+        long now = System.currentTimeMillis();
+        long elapsed = now - lastRequestAtMillis;
+        long waitMs = properties.getMinRequestIntervalMs() - elapsed;
+
+        if (waitMs > 0) {
+            try {
+                Thread.sleep(waitMs);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+        lastRequestAtMillis = System.currentTimeMillis();
+    }
+
     private SiglaRecord pickBestMatch(String query, String authorHint, String yearHint, List<SiglaRecord> records) {
         if (records.isEmpty()) return null;
 

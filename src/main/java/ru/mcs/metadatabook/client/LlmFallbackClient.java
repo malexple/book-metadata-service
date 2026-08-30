@@ -60,9 +60,44 @@ public class LlmFallbackClient {
 
     /** Поиск по ISBN. Возвращает ObjectNode с полями либо null. */
     public JsonNode findByIsbn(String isbn) {
-        String query = "ISBN " + isbn + " книга название автор издательство год";
-        String identifier = "ISBN " + isbn;
-        return runFallback(query, identifier);
+        List<String> queryVariants = List.of(
+                isbn,                  // голый номер - как чаще всего выглядит на страницах магазинов
+                "ISBN " + isbn,        // прежний вариант - оставляем как второй шанс
+                "\"" + isbn + "\" книга" // с уточнением "книга" в кавычках - отсекает случайные числовые совпадения
+        );
+
+        List<SearchResult> results = List.of();
+        String usedQuery = null;
+        for (String q : queryVariants) {
+            results = webSearch(q);
+            if (!results.isEmpty()) {
+                usedQuery = q;
+                break;
+            }
+        }
+
+        if (results.isEmpty()) {
+            log.debug("LLM fallback: SearXNG вернул пустую выдачу для ISBN {} (перебрано {} вариантов запроса)",
+                    isbn, queryVariants.size());
+            return null;
+        }
+
+        log.debug("LLM fallback: для ISBN {} сработал вариант запроса '{}', результатов: {}",
+                isbn, usedQuery, results.size());
+
+        ObjectNode raw = callOllama(isbn, formatResultsForModel(results));
+        if (raw == null) {
+            log.warn("LLM fallback: пустой JSON от модели для ISBN {}", isbn);
+            return null;
+        }
+
+        ObjectNode verified = verify(raw, results);
+        boolean anythingConfirmed = VERIFIABLE_FIELDS.stream().anyMatch(f -> verified.hasNonNull(f));
+        if (!anythingConfirmed && !verified.hasNonNull("source_url")) {
+            log.info("LLM fallback: ничего не подтвердилось для ISBN {}", isbn);
+            return null;
+        }
+        return verified;
     }
 
     /**

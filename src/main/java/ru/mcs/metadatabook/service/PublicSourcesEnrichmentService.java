@@ -64,6 +64,11 @@ public class PublicSourcesEnrichmentService {
 
     @Transactional
     public MtData enrichByIsbn(Integer orgId, String isbn) {
+        return enrichByIsbn(orgId, isbn, true);
+    }
+
+    @Transactional
+    public MtData enrichByIsbn(Integer orgId, String isbn, boolean allowLlmFallback) {
         List<String> attempted = new ArrayList<>();
 
         JsonNode olBook = openLibraryClient.findByIsbn(isbn);
@@ -84,20 +89,28 @@ public class PublicSourcesEnrichmentService {
             return persist(orgId, "ISBN", isbn, mapFantLab(flEdition, isbn), "fantlab", 0.65);
         }
 
+        // Новое: Sigla (НБ МГУ) — хорошо покрывает русскоязычные/советские издания,
+        // которых нет в Open Library/Google Books/FantLab.
+        SiglaClient.SiglaRecord siglaRecord = siglaClient.findByIsbn(isbn);
+        attempted.add("sigla");
+        if (siglaRecord != null) {
+            return persist(orgId, "ISBN", isbn, mapSigla(siglaRecord, isbn), "sigla", 0.6);
+        }
+
         JsonNode lgEdition = libGenClient.findByIsbn(isbn);
         attempted.add("libgen");
         if (lgEdition != null) {
             return persist(orgId, "ISBN", isbn, mapLibGen(lgEdition, isbn), "libgen", 0.4);
         }
 
-        if (llmFallbackEnabled) {
+        if (allowLlmFallback && llmFallbackEnabled) {
             JsonNode llmResult = llmFallbackClient.findByIsbn(isbn);
             attempted.add("llm_fallback");
             if (llmResult != null) {
                 LlmSuggestion suggestion = saveSuggestion(orgId, isbn, null, llmResult);
                 log.info("ISBN {} восстановлен через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
                         isbn, suggestion.getId());
-                return null; // не пишем в mt_data — ждём approve
+                return null;
             }
         }
 
@@ -412,6 +425,11 @@ public class PublicSourcesEnrichmentService {
         return (value == null || value.isNull()) ? null : value.asText();
     }
 
+    @Transactional
+    public List<MtData> enrichByTitleMultiple(Integer orgId, String title) {
+        return enrichByTitleMultiple(orgId, title, true);
+    }
+
     /**
      * Обогащение по названию с возвратом ВСЕХ найденных кандидатов, а не одного
      * "угаданного". Для родовых заглавий (словари, справочники и т.п.) один и тот же
@@ -433,7 +451,7 @@ public class PublicSourcesEnrichmentService {
      * создаёт дублей, а дообогащает уже сохранённые карточки.
      */
     @Transactional
-    public List<MtData> enrichByTitleMultiple(Integer orgId, String title) {
+    public List<MtData> enrichByTitleMultiple(Integer orgId, String title, boolean allowLlmFallback) {
         List<MtData> saved = new ArrayList<>();
         List<String> attempted = new ArrayList<>();
 
@@ -464,8 +482,6 @@ public class PublicSourcesEnrichmentService {
                 // включая подзаголовок/составителей) — НЕ по исходному запросу title.
                 saved.add(persist(orgId, "Title", r.title(), values, "sigla", ambiguous ? 0.3 : 0.55));
             }
-            log.info("Sigla: для '{}' сохранено {} карточек-кандидатов (ambiguous={})",
-                    title, siglaRecords.size(), ambiguous);
         }
 
         JsonNode flEdition = fantLabClient.findByTitle(title);
@@ -475,23 +491,28 @@ public class PublicSourcesEnrichmentService {
         }
 
         if (saved.isEmpty()) {
-            if (llmFallbackEnabled) {
+            if (allowLlmFallback && llmFallbackEnabled) {
                 JsonNode llmResult = llmFallbackClient.findByTitle(title);
                 attempted.add("llm_fallback");
                 if (llmResult != null) {
                     LlmSuggestion suggestion = saveSuggestion(orgId, null, title, llmResult);
                     log.info("Книга '{}' восстановлена через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
                             title, suggestion.getId());
-                    return saved; // пусто — предложение ушло на модерацию, не в mt_data напрямую
+                    return saved;
                 }
             }
             saveUnresolved(orgId, null, title, null, attempted);
-            log.info("Book '{}' not found by title in any source (attempted: {}), saved to unresolved_lookup", title, attempted);
         }
 
         return saved;
     }
-
+    private Map<String, String> mapSigla(SiglaClient.SiglaRecord record, String queriedIsbn) {
+        Map<String, String> values = mapSigla(record);
+        if (record.isbn() == null && queriedIsbn != null) {
+            values.put("ISBN", queriedIsbn);
+        }
+        return values;
+    }
     private Map<String, String> mapSigla(SiglaClient.SiglaRecord record) {
         Map<String, String> values = new LinkedHashMap<>();
         putIfPresent(values, "ISBN", record.isbn());

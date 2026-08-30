@@ -58,6 +58,12 @@ libgen:
   enabled: false   # осознанный opt-in — юридически серая зона, включайте сами
   base-url: https://libgen.li/json.php
 
+sigla:
+  # Неофициальный HTML-скрапинг sigla.ru (НБ МГУ) - сайт создан для читателей,
+  # не для автоматизированных обращений. Включайте осознанно.
+  enabled: false
+  min-request-interval-ms: 2000   # не чаще 1 запроса в 2 секунды к чужому серверу
+
 llm:
   fallback:
     # ВКЛЮЧЕНО для тестирования. Результаты идут НЕ в mt_data напрямую,
@@ -68,7 +74,7 @@ llm:
     ollama-url: http://localhost:11434
     # llama3.2:3b — модель, проверенная на этой машине (8 ГБ RAM) без OOM.
     # На сервере с 16 ядрами/100 ГБ RAM смените на более крупную (qwen2.5:14b и т.п.).
-    model: llama3.2:3b
+    model: qwen2.5:32b
     confidence: 0.3
     timeout-seconds: 180
 
@@ -98,7 +104,7 @@ bucket4j:
   cache-to-use: jcache
   filters:
     - cache-name: public-search-buckets
-      url: /api/v1/public/.*
+      url: /api/v1/(public|search)/.*
       strategy: first
       http-response-body: '{"error": "Too Many Requests", "message": "Rate limit exceeded, try again shortly"}'
       rate-limits:

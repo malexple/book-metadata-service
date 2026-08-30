@@ -7,10 +7,11 @@ import org.springframework.scheduling.annotation.EnableScheduling;
 import ru.mcs.metadatabook.config.BookProperties;
 import ru.mcs.metadatabook.config.GoogleBooksProperties;
 import ru.mcs.metadatabook.config.LibGenProperties;
+import ru.mcs.metadatabook.config.SiglaProperties;
 
 @EnableScheduling
 @SpringBootApplication
-@EnableConfigurationProperties({BookProperties.class, GoogleBooksProperties.class, LibGenProperties.class})
+@EnableConfigurationProperties({BookProperties.class, GoogleBooksProperties.class, LibGenProperties.class, SiglaProperties.class})
 public class BookMetadataServiceApplication {
 
     public static void main(String[] args) {
