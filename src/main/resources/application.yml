@@ -52,7 +52,7 @@ google:
     # Получить бесплатно: console.cloud.google.com -> New Project ->
     # APIs & Services -> Library -> найти "Books API" -> Enable ->
     # Credentials -> Create Credentials -> API Key. Карта не требуется.
-    api-key:
+    api-key: AIzaSyDM02ULcgbyuTLRZPsbUIueKHs-g81KMDw
 
 libgen:
   enabled: false   # осознанный opt-in — юридически серая зона, включайте сами
@@ -61,7 +61,7 @@ libgen:
 sigla:
   # Неофициальный HTML-скрапинг sigla.ru (НБ МГУ) - сайт создан для читателей,
   # не для автоматизированных обращений. Включайте осознанно.
-  enabled: false
+  enabled: true
   min-request-interval-ms: 2000   # не чаще 1 запроса в 2 секунды к чужому серверу
 
 llm:
@@ -70,8 +70,8 @@ llm:
     # а в таблицу llm_suggestions на ручную модерацию (см. LlmSuggestion,
     # EnrichmentController.listSuggestions/approveSuggestion).
     enabled: true
-    searxng-url: http://localhost:8080
-    ollama-url: http://localhost:11434
+    searxng-url: http://localhost:8091
+    ollama-url: http://192.168.30.55:11434
     # llama3.2:3b — модель, проверенная на этой машине (8 ГБ RAM) без OOM.
     # На сервере с 16 ядрами/100 ГБ RAM смените на более крупную (qwen2.5:14b и т.п.).
     model: qwen2.5:32b
@@ -114,15 +114,5 @@ bucket4j:
               time: 10
               unit: seconds
             - capacity: 60
-              time: 1
-              unit: minutes
-
-    - cache-name: partner-buckets
-      url: /api/v1/(books|enrichment)/.*
-      strategy: first
-      rate-limits:
-        - cache-key: "getHeader('X-Api-Key') != null ? getHeader('X-Api-Key') : getParameter('apiKey')"
-          bandwidths:
-            - capacity: 300
               time: 1
               unit: minutes
