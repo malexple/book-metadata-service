@@ -1,0 +1,19 @@
+# docker-compose.searxng.yml
+# Запуск: docker compose -f docker-compose.searxng.yml up -d
+#
+# Монтирует ваш существующий settings.yml (уже настроенный под JSON API -
+# formats: html/json, limiter: false, image_proxy: true) внутрь контейнера.
+# Путь ./searxng/settings.yml поправьте под реальное расположение файла в репозитории.
+
+services:
+  searxng:
+    image: searxng/searxng:latest
+    container_name: searxng
+    ports:
+      - "8091:8080"
+    volumes:
+      - ./searxng/settings.yml:/etc/searxng/settings.yml:ro
+    environment:
+      - BASE_URL=http://localhost:8091/
+      - INSTANCE_NAME=book-metadata-service-search
+    restart: unless-stopped

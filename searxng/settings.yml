@@ -1,0 +1,15 @@
+use_default_settings: true
+
+general:
+  instance_name: "book-metadata-service-search"
+
+search:
+  safe_search: 0
+  formats:
+    - html
+    - json
+
+server:
+  secret_key: "b3f9c1a2d4e6f8091a2b3c4d5e6f70819283746556677889900aabbccddeeff"
+  limiter: false
+  image_proxy: true
