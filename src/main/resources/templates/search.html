@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Поиск книги — Book Metadata Service</title>
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    <style>
+        .book-cover { max-width: 100px; float: left; margin-right: 1rem; border-radius: 4px; }
+        .book-card::after { content: ""; display: block; clear: both; }
+        #status { min-height: 1.5rem; }
+    </style>
+</head>
+<body>
+<main class="container">
+
+    <nav>
+        <ul><li><strong>📚 Book Metadata Service</strong></li></ul>
+        <ul>
+            <li><a href="/">Главная</a></li>
+            <li><a href="/search">Поиск</a></li>
+            <li><a href="/swagger-ui/index.html">API (Swagger)</a></li>
+        </ul>
+    </nav>
+
+    <h1>Поиск книги</h1>
+    <p>Введите ISBN или название — поиск бесплатный и анонимный, не требует ключа.</p>
+
+    <form id="search-form">
+        <div class="grid">
+            <input type="text" id="query-input" placeholder="Например: 9785171234567 или Мастер и Маргарита" required>
+            <button type="submit" style="width: auto">Искать</button>
+        </div>
+    </form>
+
+    <p id="status" aria-busy="false"></p>
+
+    <div id="results"></div>
+
+</main>
+
+<script>
+    const form = document.getElementById('search-form');
+    const statusEl = document.getElementById('status');
+    const resultsEl = document.getElementById('results');
+
+    function isIsbn(value) {
+        // ISBN-10/13: только цифры, возможно X на конце, без пробелов длиной 10-13 символов
+        return /^[\dXx]{10,13}$/.test(value.replace(/[-\s]/g, ''));
+    }
+
+    function escapeHtml(str) {
+        const div = document.createElement('div');
+        div.textContent = str ?? '';
+        return div.innerHTML;
+    }
+
+    function renderBook(book) {
+        const cover = book.CoverUrl
+            ? `<img class="book-cover" src="${escapeHtml(book.CoverUrl)}" alt="Обложка">`
+            : '';
+        return `
+            <article class="book-card">
+                ${cover}
+                <h3>${escapeHtml(book.Title ?? 'Без названия')}</h3>
+                ${book.Subtitle ? `<p><em>${escapeHtml(book.Subtitle)}</em></p>` : ''}
+                <p>
+                    ${book.AuthorName ? `<strong>Автор:</strong> ${escapeHtml(book.AuthorName)}<br>` : ''}
+                    ${book.Publisher ? `<strong>Издательство:</strong> ${escapeHtml(book.Publisher)}<br>` : ''}
+                    ${book.PublishedYear ? `<strong>Год:</strong> ${escapeHtml(String(book.PublishedYear))}<br>` : ''}
+                    ${book.ISBN ? `<strong>ISBN:</strong> ${escapeHtml(book.ISBN)}<br>` : ''}
+                    ${book.Genre ? `<strong>Жанр:</strong> ${escapeHtml(book.Genre)}<br>` : ''}
+                </p>
+                ${book.Description ? `<p>${escapeHtml(book.Description).slice(0, 300)}${book.Description.length > 300 ? '…' : ''}</p>` : ''}
+            </article>
+        `;
+    }
+
+    form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const query = document.getElementById('query-input').value.trim();
+        if (!query) return;
+
+        statusEl.setAttribute('aria-busy', 'true');
+        statusEl.textContent = 'Ищем...';
+        resultsEl.innerHTML = '';
+
+        const response = await fetch(`/api/v1/search?q=${encodeURIComponent(query)}`);
+
+        try {
+            const response = await fetch(`/api/v1/public/search?${param}`);
+
+            if (response.status === 429) {
+                statusEl.textContent = 'Слишком много запросов — подождите немного и попробуйте снова.';
+                return;
+            }
+            if (!response.ok) {
+                statusEl.textContent = 'Что-то пошло не так. Попробуйте позже.';
+                return;
+            }
+
+            const books = await response.json();
+            statusEl.setAttribute('aria-busy', 'false');
+
+            if (books.length === 0) {
+                statusEl.textContent = 'Ничего не найдено. Попробуйте изменить запрос.';
+                return;
+            }
+
+            statusEl.textContent = `Найдено: ${books.length}`;
+            resultsEl.innerHTML = books.map(renderBook).join('');
+        } catch (err) {
+            statusEl.setAttribute('aria-busy', 'false');
+            statusEl.textContent = 'Ошибка сети. Проверьте соединение и попробуйте снова.';
+        }
+    });
+</script>
+</body>
+</html>
