@@ -1,165 +1,78 @@
 # Book Metadata Service
 
-Сервис агрегации и раздачи метаданных книг (ISBN, автор, обложка, описание и т.д.)
-с гибким выбором полей через API, автоматическим обогащением из открытых источников
-и очередью для книг, не найденных ни в одном источнике.
+Открытый бесплатный API для поиска метаданных книг по ISBN или названию — без
+регистрации, без ключа. Объединяет Open Library, Google Books, FantLab и
+другие источники в одну карточку, автоматически обогащая базу при первом
+запросе по книге, которой ещё нет.
 
-Идея: в русскоязычном сегменте нет удобного открытого аналога Google Books API —
-этот сервис закрывает эту нишу, агрегируя данные из нескольких источников и отдавая
-их через единый динамический эндпоинт, где потребитель сам выбирает нужные поля.
+Публичный инстанс: **[bookmetadata.ru](https://bookmetadata.ru)** ·
+[документация API](https://bookmetadata.ru/docs) ·
+[Swagger](https://bookmetadata.ru/swagger-ui/index.html)
 
-## Стек
+## Быстрый старт (без сборки, готовый образ с Docker Hub)
 
-- **Java 21**, Spring Boot 3.4, Gradle (Groovy DSL)
-- **PostgreSQL** + Flyway для миграций
-- **Hibernate 6** с JSONB-маппингом через `hypersistence-utils`
-- Модель данных — pivot/EAV-архитектура (вдохновлена whitepaper Force.com Multitenancy),
-  адаптированная под книжный каталог
-
-## Архитектура данных
-
-Вместо жёсткой реляционной схемы под каждый тип контента используется гибкая
-метамодель:
-
-- **`mt_objects`** — типы контента (`Book`, `Author`, `Magazine`)
-- **`mt_fields`** — динамический справочник полей для каждого типа, с привязкой
-  к конкретному flex-слоту (`field_num`)
-- **`mt_data`** — хранилище записей с 50 универсальными колонками `value0..value49`;
-  какое поле лежит в каком слоте — определяется через `mt_fields`
-- **`mt_indexes`** — типизированный индекс (string/num/date) для полей с `is_indexed=true`,
-  чтобы поиск не сканировал текстовые слоты
-- **`mt_field_history`** — история изменений значений при повторном обогащении
-- **`sources_meta`** (JSONB-колонка в `mt_data`) — provenance: из какого источника
-  взято каждое значение, когда и с какой уверенностью (`confidence`)
-- **`unresolved_lookup`** — очередь ISBN/названий, не найденных ни в одном источнике
-- **`mt_attachment`** — задел под будущую загрузку PDF/DjVu для OCR-конвейера
-- **`api_keys`** — минимальная таблица API-ключей для доступа к публичному API
-
-Преимущество такой модели: добавить новое поле для типа контента — это `INSERT`
-в `mt_fields`, а не `ALTER TABLE` с миграцией и простоем.
-
-## Быстрый старт
+Нужны только два файла — не нужно клонировать репозиторий и ставить Java/Gradle:
 
 ```bash
-./gradlew bootRun
+curl -O https://raw.githubusercontent.com/malexple/book-metadata-service/main/docker-compose.hub.yml
+curl -O https://raw.githubusercontent.com/malexple/book-metadata-service/main/.env.example
+cp .env.example .env   # открыть и поправить DB_PASSWORD
+docker compose -f docker-compose.hub.yml up -d
+curl http://localhost:8080/api/v1/search?q=Дорога
 ```
 
-Приложение поднимется на `http://localhost:8080`, Flyway применит миграции
-`V1__create_core_metadata.sql` … `V4__support_tables.sql` автоматически.
+Образ: [`malexple/book-metadata-service`](https://hub.docker.com/r/malexple/book-metadata-service)
+на Docker Hub.
 
-- Swagger UI: `http://localhost:8080/swagger-ui.html`
-- OpenAPI JSON: `http://localhost:8080/api-docs`
-
-Тестовый API-ключ уже засеян миграцией: `dev-local-key-change-me` (см. таблицу `api_keys`).
-
-### Обязательная настройка перед использованием обогащения
-
-Google Books API требует собственный ключ (анонимная квота исчерпана Google
-глобально) — получить бесплатно на [console.cloud.google.com](https://console.cloud.google.com):
-создать проект → включить **Books API** → **Public data** → создать API key.
-
-```yaml
-# application.yml
-google:
-  books:
-    api-key: ВАШ_КЛЮЧ
-```
-
-## Публичный API книг
-
-Единый динамический эндпоинт — потребитель сам выбирает поля через `?fields=`,
-вместо получения "простыни" всех данных сразу.
+## Сборка из исходников (для разработки)
 
 ```bash
-# Список книг с выбором конкретных полей
-curl "http://localhost:8080/api/v1/books?apiKey=dev-local-key-change-me&fields=title,isbn,author_name"
-
-# Поиск по индексированному полю
-curl "http://localhost:8080/api/v1/books/search?apiKey=dev-local-key-change-me&field=ISBN&value=9785041558389"
-
-# Получить книгу по GUID
-curl "http://localhost:8080/api/v1/books/{guid}?apiKey=dev-local-key-change-me&fields=title,description"
-
-# Создать книгу вручную
-curl -X POST "http://localhost:8080/api/v1/books?apiKey=dev-local-key-change-me" \
-  -H "Content-Type: application/json" \
-  -d '{"values": {"Title": "Мастер и Маргарита", "ISBN": "9785041558389"}, "source": "manual"}'
+git clone https://github.com/malexple/book-metadata-service.git
+cd book-metadata-service
+cp .env.example .env
+docker compose up -d --build
 ```
 
-Список доступных полей объекта — через Metadata API (источник для будущего
-UI-конструктора):
+## API
+
+Три публичных метода, ограничение 60 запросов/мин с одного IP:
 
 ```bash
-curl "http://localhost:8080/api/metadata/objects/Book/fields?orgId=1"
+curl "https://bookmetadata.ru/api/v1/search/isbn/9785171234567"
+curl "https://bookmetadata.ru/api/v1/search/title?q=Мастер+и+Маргарита"
+curl "https://bookmetadata.ru/api/v1/search?q=9785171234567"
 ```
 
-## Обогащение метаданных
+Выбор полей: `?fields=Title,AuthorName,ISBN`. Полное описание — на
+[странице документации](https://bookmetadata.ru/docs) и в
+[Swagger UI](https://bookmetadata.ru/swagger-ui/index.html).
 
-Цепочка источников, каждый бесплатный и не требующий партнёрской регистрации
-(кроме Google Books, которому нужен свободный API-ключ):
+## Опциональные источники (выключены по умолчанию)
 
-| Порядок | Источник | Ключ нужен | Покрытие |
-|---|---|---|---|
-| 1 | Open Library | Нет | Международное, слабое для чисто русских изданий |
-| 2 | Google Books | Да (бесплатный) | Хорошее, включая книги через ЛитРес |
-| 3 | FantLab | Нет | Отличное для фантастики/фэнтези на русском |
-| 4 | LibGen | Нет | Широкое, но ненадёжное; **выключено по умолчанию** |
+Некоторые источники обогащения выключены "из коробки" и требуют осознанного
+включения — см. `.env.example`:
 
-```bash
-curl -X POST "http://localhost:8080/api/v1/enrichment/public/by-isbn?apiKey=dev-local-key-change-me&isbn=9785041558389"
-```
+- **LibGen** (`LIBGEN_ENABLED`) — юридически серая зона.
+- **Sigla / sigla.ru** (`SIGLA_ENABLED`) — неофициальный скрапинг сайта
+  библиотеки МГУ, не предназначенного для автоматических обращений.
+- **LLM fallback** (`LLM_FALLBACK_ENABLED`) — требует отдельно поднятые
+  SearXNG и Ollama; результаты идут не напрямую в базу, а в очередь на
+  ручную модерацию.
 
-Логика: идём по источникам по порядку, останавливаемся на первом найденном.
-Если ничего не найдено — ISBN сохраняется в `unresolved_lookup` со списком
-`attempted_sources`, чтобы можно было разобрать вручную позже.
+## Архитектура
 
-### Про LibGen
+EAV/pivot-модель метаданных (mtobjects/mtfields/mtdata) в духе white paper
+Force.com Multitenant Architecture — гибкая схема без ALTER TABLE при
+добавлении новых полей. PostgreSQL + Flyway, Spring Boot 3.4 / Java 21.
 
-Технически открытый и мощный источник (структурированный поиск по ISBN),
-но представляет собой теневую библиотеку — юридически серая зона даже для
-одних метаданных. Выключен по умолчанию (`libgen.enabled: false`), включается
-осознанно:
+## Разработка и деплой
 
-```yaml
-libgen:
-  enabled: true
-```
+- `build-and-push.sh` / `build-and-push.ps1` — сборка и публикация образа
+  в Docker Hub под тегами `:latest` и `:<git-sha>`.
+- `docker-compose.yml` — сборка из исходников (для разработки).
+- `docker-compose.hub.yml` — готовый образ с Docker Hub (для конечных
+  пользователей, без клонирования репозитория).
 
-Также может быть недоступен без VPN в зависимости от региона.
+## Лицензия
 
-### Почему не Litres
-
-Изначально рассматривался как основной источник (`catalitv2` API), но:
-1. Требует партнёрской регистрации (`app_id`/`secret_key`) — не мгновенно.
-2. Протокол сложный: обязательный SID даже для анонимного доступа, строгий
-   формат времени без дробных секунд, `sha`-подпись обязательна всегда.
-3. **Официальная документация прямо запрещает** использование этого API
-   в партнёрских сервисах, перепродающих/переотдающих каталог третьим лицам —
-   именно то, чем является этот сервис.
-
-Решено не тратить силы на партнёрскую регистрацию, пока хватает бесплатных
-источников. Код может быть переиспользован при пересмотре решения.
-
-## Provenance и история изменений
-
-Каждое значение в `mt_data` сопровождается записью в `sources_meta` (JSONB):
-
-```json
-{"2": {"source": "googlebooks", "updated_at": "2026-08-18T00:32:00Z", "confidence": 0.7}}
-```
-
-Ключ — номер flex-слота (`field_num`). При повторном обогащении старое значение
-поля сохраняется в `mt_field_history` перед перезаписью.
-
-## Известные ограничения / что дальше
-
-- **OCR-конвейер** (Tesseract) для PDF/DjVu — в разработке. Таблица `mt_attachment`
-  уже заложена под эту задачу.
-- **UI-конструктор** (Thymeleaf) для визуального выбора полей — не реализован,
-  Metadata API уже готов как источник данных для него.
-- **Резолюция авторов** — сейчас `AuthorName` пишется как текст, `AuthorId`
-  (lookup на объект `Author`) не заполняется автоматически.
-- **Планировщик** для периодического обхода `unresolved_lookup` и повторных
-  попыток обогащения — не реализован.
-- **API-ключи** — хранятся в открытом виде в БД, без rate-limiting. Требует
-  усиления перед реальным внешним использованием.
+Apache 2.0

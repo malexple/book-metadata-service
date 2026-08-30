@@ -20,21 +20,18 @@ services:
       timeout: 5s
       retries: 10
     mem_limit: 256m
-    # Порт БД наружу не публикуем
 
   app:
     build: .
-    image: book-metadata-service:latest
+    image: malexple/book-metadata-service:latest
     container_name: book-metadata-service
     restart: unless-stopped
     depends_on:
       postgres:
         condition: service_healthy
     ports:
-      - "${APP_PORT:-8081}:8081"
+      - "${APP_PORT:-8080}:8081"
     environment:
-      # DB_HOST/DB_PORT НЕ берутся из .env намеренно - "postgres" это имя
-      # сервиса в этой же docker-сети, а не то, что можно произвольно менять
       DB_HOST: postgres
       DB_PORT: 5432
       DB_NAME: ${DB_NAME:-bookmetadb}
@@ -47,7 +44,7 @@ services:
       SIGLA_ENABLED: ${SIGLA_ENABLED:-false}
 
       LLM_FALLBACK_ENABLED: ${LLM_FALLBACK_ENABLED:-false}
-      LLM_FALLBACK_SEARXNG_URL: ${LLM_FALLBACK_SEARXNG_URL:-http://searxng:8080}
+      LLM_FALLBACK_SEARXNG_URL: ${LLM_FALLBACK_SEARXNG_URL:-http://searxng:${SEARXNG_PORT:-8080}}
       LLM_FALLBACK_OLLAMA_URL: ${LLM_FALLBACK_OLLAMA_URL:-http://host.docker.internal:11434}
       LLM_FALLBACK_MODEL: ${LLM_FALLBACK_MODEL:-llama3.2:3b}
       LLM_FALLBACK_CONFIDENCE: ${LLM_FALLBACK_CONFIDENCE:-0.3}
@@ -61,6 +58,14 @@ services:
       retries: 5
       start_period: 30s
     mem_limit: 900m
+
+  # searxng:
+  #   image: searxng/searxng:latest
+  #   container_name: searxng
+  #   restart: unless-stopped
+  #   ports:
+  #     - "127.0.0.1:${SEARXNG_PORT:-8080}:8080"
+  #   mem_limit: 256m
 
 volumes:
   pgdata:
