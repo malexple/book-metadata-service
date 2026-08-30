@@ -21,4 +21,9 @@ public class WebController {
     public String search() {
         return "search";
     }
+
+    @GetMapping("/docs")
+    public String docs() {
+        return "docs";
+    }
 }

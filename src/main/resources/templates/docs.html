@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Документация API — Book Metadata Service</title>
+    <th:block th:replace="~{fragments :: head-assets}"></th:block>
+</head>
+<body>
+
+<nav th:replace="~{fragments :: nav}"></nav>
+
+<main class="container">
+
+    <h1>Документация API</h1>
+    <p>Три метода, без регистрации и без ключа. Ограничение — 60 запросов в минуту с одного IP
+       (кратковременный всплеск до 10 запросов допустим).</p>
+
+    <hr>
+
+    <h2>1. Поиск по ISBN</h2>
+    <p><code>GET /api/v1/search/isbn/{isbn}</code></p>
+    <p>Если книги нет в базе — сервис автоматически подтянет данные из Open Library, Google Books,
+       FantLab и других источников и сохранит на будущее. Первый запрос по новому ISBN может занять
+       несколько секунд, повторный — мгновенный.</p>
+    <pre><code>curl "https://ваш-домен/api/v1/search/isbn/9785171234567"</code></pre>
+    <pre><code>[
+  {
+    "guid": "c1eac6ea-ecac-4206-9121-d030cfbc9ff2",
+    "Title": "Дорога",
+    "AuthorName": "Кормак Маккарти",
+    "Publisher": "Азбука",
+    "PublishedYear": 2018,
+    "ISBN": "9785389143852",
+    "CoverUrl": "https://covers.openlibrary.org/b/id/12196387-L.jpg"
+  }
+]</code></pre>
+    <p>Если книгу не удалось найти нигде — вернётся пустой массив <code>[]</code>, а не ошибка.</p>
+
+    <hr>
+
+    <h2>2. Поиск по названию</h2>
+    <p><code>GET /api/v1/search/title?q=...</code></p>
+    <p>Возвращает массив — по названию может найтись несколько изданий одной книги
+       или несколько разных книг со сходным названием. Выбор нужного издания —
+       на стороне вашего приложения.</p>
+    <pre><code>curl "https://ваш-домен/api/v1/search/title?q=Мастер+и+Маргарита"</code></pre>
+
+    <hr>
+
+    <h2>3. Универсальный поиск</h2>
+    <p><code>GET /api/v1/search?q=...</code></p>
+    <p>Сам определяет по контрольной сумме, похож ли запрос на ISBN, и вызывает нужный метод.
+       Удобен, если в вашем приложении одно поле ввода на всё.</p>
+    <pre><code>curl "https://ваш-домен/api/v1/search?q=9785171234567"
+curl "https://ваш-домен/api/v1/search?q=Мастер+и+Маргарита"</code></pre>
+
+    <hr>
+
+    <h2>Выбор полей — ?fields=</h2>
+    <p>По умолчанию возвращается полный набор публичных полей. Можно запросить только нужные —
+       например, для автокомплита в UI достаточно названия и автора:</p>
+    <pre><code>curl "https://ваш-домен/api/v1/search/title?q=дорога&amp;fields=Title,AuthorName"</code></pre>
+    <p>Доступные поля: <code>Title, Subtitle, AuthorName, Publisher, PublishedYear, ISBN, ISBN13,
+       CoverUrl, Genre, Description, Pages, Language, Series, SeriesNumber, Rating, Format,
+       AgeRestriction</code>. Неизвестные имена в <code>fields</code> просто игнорируются —
+       опечатка не приведёт к ошибке, вернётся набор по умолчанию.</p>
+
+    <hr>
+
+    <h2>Публичные счётчики</h2>
+    <p><code>GET /api/v1/public/stats</code></p>
+    <pre><code>curl "https://ваш-домен/api/v1/public/stats"</code></pre>
+    <pre><code>{
+  "totalBooks": 1284,
+  "booksAddedToday": 12,
+  "authorsVerified": 640,
+  "requestsToday": 355,
+  "updatedAt": "2026-08-30T14:00:00Z"
+}</code></pre>
+    <p>Обновляются раз в час — это снапшот, не live-счёт.</p>
+
+    <hr>
+
+    <h2>Коды ошибок</h2>
+    <table>
+        <thead><tr><th>Код</th><th>Когда</th></tr></thead>
+        <tbody>
+            <tr><td>400</td><td>Невалидный ISBN (не прошёл проверку контрольной суммы) или не передан ни <code>isbn</code>, ни <code>q</code></td></tr>
+            <tr><td>429</td><td>Превышен лимит запросов (60/мин, burst 10) — подождите и повторите</td></tr>
+            <tr><td>500</td><td>Внутренняя ошибка — если повторяется стабильно, напишите нам</td></tr>
+        </tbody>
+    </table>
+
+    <p>Полная машиночитаемая спецификация (OpenAPI) — в <a href="/swagger-ui/index.html">Swagger UI</a>
+       или напрямую в <a href="/api-docs">/api-docs</a> для автогенерации клиентов.</p>
+
+    <footer th:replace="~{fragments :: footer}"></footer>
+
+</main>
+</body>
+</html>

@@ -1,13 +1,13 @@
 server:
-  port: 8081
+  port: ${SERVER_PORT:8081}
 
 spring:
   application:
     name: book-metadata-service
   datasource:
-    url: jdbc:postgresql://localhost:5439/bookmetadb?reWriteBatchedInserts=true
-    username: postgres
-    password: postgres
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:bookmetadb}?reWriteBatchedInserts=true
+    username: ${DB_USERNAME:postgres}
+    password: ${DB_PASSWORD:postgres}
     driver-class-name: org.postgresql.Driver
     hikari:
       maximum-pool-size: 20
@@ -42,41 +42,34 @@ spring:
 book:
   pivot:
     default-org-id: 1
-  api:
-    # Временный статичный ключ на старте. Позже заменить на таблицу api_keys.
-    static-api-key: dev-local-key-change-me
-    public-api-key: public-books-2026-change-me
 
 google:
   books:
-    # Получить бесплатно: console.cloud.google.com -> New Project ->
-    # APIs & Services -> Library -> найти "Books API" -> Enable ->
-    # Credentials -> Create Credentials -> API Key. Карта не требуется.
-    api-key:
+    # Бесплатно: console.cloud.google.com -> APIs & Services -> Library ->
+    # Books API -> Enable -> Credentials -> Create API Key. Без ключа
+    # работает, но с урезанной анонимной квотой.
+    api-key: ${GOOGLE_BOOKS_API_KEY:}
 
 libgen:
-  enabled: false   # осознанный opt-in — юридически серая зона, включайте сами
+  enabled: ${LIBGEN_ENABLED:false}   # юридически серая зона — осознанный opt-in
   base-url: https://libgen.li/json.php
 
 sigla:
-  # Неофициальный HTML-скрапинг sigla.ru (НБ МГУ) - сайт создан для читателей,
-  # не для автоматизированных обращений. Включайте осознанно.
-  enabled: false
-  min-request-interval-ms: 2000   # не чаще 1 запроса в 2 секунды к чужому серверу
+  # Неофициальный HTML-скрапинг sigla.ru (НБ МГУ), сайт не для автоматизированных
+  # обращений — включайте осознанно.
+  enabled: ${SIGLA_ENABLED:false}
+  min-request-interval-ms: 2000
 
 llm:
   fallback:
-    # ВКЛЮЧЕНО для тестирования. Результаты идут НЕ в mt_data напрямую,
-    # а в таблицу llm_suggestions на ручную модерацию (см. LlmSuggestion,
-    # EnrichmentController.listSuggestions/approveSuggestion).
-    enabled: true
-    searxng-url: http://localhost:8080
-    ollama-url: http://localhost:11434
-    # llama3.2:3b — модель, проверенная на этой машине (8 ГБ RAM) без OOM.
-    # На сервере с 16 ядрами/100 ГБ RAM смените на более крупную (qwen2.5:14b и т.п.).
-    model: qwen2.5:32b
-    confidence: 0.3
-    timeout-seconds: 180
+    # Результаты идут НЕ в mt_data напрямую, а в llm_suggestions на ручную
+    # модерацию (LlmSuggestion, EnrichmentController.listSuggestions/approveSuggestion).
+    enabled: ${LLM_FALLBACK_ENABLED:false}
+    searxng-url: ${LLM_FALLBACK_SEARXNG_URL:http://localhost:8080}
+    ollama-url: ${LLM_FALLBACK_OLLAMA_URL:http://localhost:11434}
+    model: ${LLM_FALLBACK_MODEL:llama3.2:3b}
+    confidence: ${LLM_FALLBACK_CONFIDENCE:0.3}
+    timeout-seconds: ${LLM_FALLBACK_TIMEOUT_SECONDS:180}
 
 management:
   endpoints:
@@ -114,15 +107,5 @@ bucket4j:
               time: 10
               unit: seconds
             - capacity: 60
-              time: 1
-              unit: minutes
-
-    - cache-name: partner-buckets
-      url: /api/v1/(books|enrichment)/.*
-      strategy: first
-      rate-limits:
-        - cache-key: "getHeader('X-Api-Key') != null ? getHeader('X-Api-Key') : getParameter('apiKey')"
-          bandwidths:
-            - capacity: 300
               time: 1
               unit: minutes

@@ -331,7 +331,7 @@ public class PublicSourcesEnrichmentService {
 
         JsonNode imageLinks = volumeInfo.get("imageLinks");
         if (imageLinks != null) {
-            putIfPresent(values, "CoverUrl", textOrNull(imageLinks, "thumbnail"));
+            putIfPresent(values, "CoverUrl", toHttps(textOrNull(imageLinks, "thumbnail")));
         }
 
         values.put("SourceStatus", isbn != null ? "enriched_googlebooks" : "enriched_googlebooks_by_title");
@@ -523,5 +523,16 @@ public class PublicSourcesEnrichmentService {
 
         values.put("SourceStatus", "enriched_sigla_nb_msu");
         return values;
+    }
+
+    /**
+     * Google Books возвращает ссылки на обложки по http:// (не https). На странице,
+     * отданной по HTTPS, браузер сам заблокирует такую картинку как mixed content -
+     * независимо от CSP. Google отдаёт то же изображение и по https, поэтому просто
+     * меняем схему, а не роняем обложку.
+     */
+    private String toHttps(String url) {
+        if (url == null) return null;
+        return url.startsWith("http://") ? "https://" + url.substring("http://".length()) : url;
     }
 }

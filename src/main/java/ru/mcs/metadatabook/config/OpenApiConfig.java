@@ -18,13 +18,14 @@ public class OpenApiConfig {
         return new OpenAPI()
                 .info(new Info()
                         .title("Book Metadata Service API")
-                        .description("Сервис агрегации и раздачи метаданных книг (ISBN, автор, обложка и т.д.) " +
-                                "с гибким выбором полей через ?fields=, автоматическим обогащением из открытых " +
-                                "источников (Open Library, Google Books, FantLab, опционально LibGen) и очередью " +
-                                "unresolved_lookup для книг, не найденных ни в одном источнике.")
+                        .description("Публичный сервис метаданных книг: поиск по ISBN/названию с выбором полей " +
+                                "через ?fields=, полностью автоматическое обогащение из открытых источников " +
+                                "(Open Library, Google Books, FantLab, опционально Sigla/LibGen) при первом " +
+                                "обращении к книге, которой ещё нет в базе. Без регистрации и без apiKey. " +
+                                "Книги, не найденные ни в одном источнике, уходят в очередь unresolved_lookup.")
                         .version("1.0.0")
                         .contact(new Contact()
-                                .name("Simple Complex")
+                                .name("Malexple")
                                 .email("malexple@gmail.ru"))
                         .license(new License()
                                 .name("Apache 2.0")

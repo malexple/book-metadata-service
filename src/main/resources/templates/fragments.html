@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="ru" xmlns:th="http://www.thymeleaf.org">
+<head><meta charset="UTF-8"></head>
+<body>
+
+<!-- Общие <head>-ссылки (favicon + стили). Подключается как
+     <th:block th:replace="~{fragments :: head-assets}"></th:block>
+     внутри <head> каждой страницы, ПОСЛЕ собственного <title>. -->
+<th:block th:fragment="head-assets">
+    <link rel="icon" href="/favicon.ico">
+    <link rel="stylesheet" href="/css/style.css">
+</th:block>
+
+<!-- Единая шапка сайта. Один и тот же HTML на всех страницах -
+     никаких "своих" вариантов nav.topnav / голого nav в отдельных шаблонах. -->
+<nav th:fragment="nav">
+    <ul>
+        <li><a href="/" class="brand">📚 Book Metadata Service</a></li>
+    </ul>
+    <ul>
+        <li><a href="/">Главная</a></li>
+        <li><a href="/search">Поиск</a></li>
+        <li><a href="/docs">Документация</a></li>
+        <li><a href="/swagger-ui/index.html">API (Swagger)</a></li>
+    </ul>
+</nav>
+
+<!-- Единый подвал сайта. -->
+<footer th:fragment="footer">
+    <small>
+        Book Metadata Service ·
+        <a href="/search">Поиск книги</a> ·
+        <a href="/docs">Документация</a> ·
+        <a href="/swagger-ui/index.html">API</a>
+    </small>
+</footer>
+
+</body>
+</html>
