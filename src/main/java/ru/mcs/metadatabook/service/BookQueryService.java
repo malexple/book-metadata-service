@@ -119,7 +119,7 @@ public class BookQueryService {
         String pattern = "%" + value.toLowerCase().trim() + "%";
         List<MtIndex> matches = indexRepository.findByStringValueContaining(
                 orgId, objId, field.getFieldNum(), pattern);
-        List<UUID> guids = matches.stream().map(MtIndex::getGuid).toList();
+        List<UUID> guids = matches.stream().map(MtIndex::getGuid).distinct().toList();
         if (guids.isEmpty()) return List.of();
         return dataRepository.findByOrgIdAndGuidIn(orgId, guids);
     }

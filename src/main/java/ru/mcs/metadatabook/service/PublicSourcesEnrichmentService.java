@@ -413,7 +413,7 @@ public class PublicSourcesEnrichmentService {
      */
     @Transactional
     public List<MtData> enrichByTitleMultiple(Integer orgId, String title, boolean allowLlmFallback) {
-        List<MtData> saved = new ArrayList<>();
+        java.util.Map<java.util.UUID, MtData> savedByGuid = new java.util.LinkedHashMap<>();
         List<String> attempted = new ArrayList<>();
 
         List<JsonNode> olDocs = openLibraryClient.findByTitle(title, TITLE_SEARCH_LIMIT);
@@ -424,7 +424,8 @@ public class PublicSourcesEnrichmentService {
                 Map<String, String> values = mapOpenLibrarySearch(doc);
                 String candidateTitle = values.getOrDefault("Title", title);
                 if (ambiguous) values.put("SourceStatus", "needs_review_multiple_candidates");
-                saved.add(persist(orgId, "Title", candidateTitle, values, "openlibrary", ambiguous ? 0.3 : 0.5));
+                MtData d = persist(orgId, "Title", candidateTitle, values, "openlibrary", ambiguous ? 0.3 : 0.5);
+                savedByGuid.put(d.getGuid(), d);
             }
         }
 
@@ -436,12 +437,11 @@ public class PublicSourcesEnrichmentService {
                 Map<String, String> values = mapGoogleBooks(volumeInfo, null);
                 String candidateTitle = values.getOrDefault("Title", title);
                 if (ambiguous) values.put("SourceStatus", "needs_review_multiple_candidates");
-                saved.add(persist(orgId, "Title", candidateTitle, values, "googlebooks", ambiguous ? 0.3 : 0.5));
+                MtData d = persist(orgId, "Title", candidateTitle, values, "googlebooks", ambiguous ? 0.3 : 0.5);
+                savedByGuid.put(d.getGuid(), d);
             }
         }
 
-        // Sigla может вернуть много кандидатов для родовых заглавий — это и есть штатный случай,
-        // а не ошибка, которую нужно "разрешать" угадыванием.
         List<SiglaClient.SiglaRecord> siglaRecords = siglaClient.search(title);
         attempted.add("sigla");
         if (!siglaRecords.isEmpty()) {
@@ -451,17 +451,19 @@ public class PublicSourcesEnrichmentService {
                 if (ambiguous) {
                     values.put("SourceStatus", "needs_review_multiple_candidates");
                 }
-                saved.add(persist(orgId, "Title", r.title(), values, "sigla", ambiguous ? 0.3 : 0.55));
+                MtData d = persist(orgId, "Title", r.title(), values, "sigla", ambiguous ? 0.3 : 0.55);
+                savedByGuid.put(d.getGuid(), d);
             }
         }
 
         JsonNode flEdition = fantLabClient.findByTitle(title);
         attempted.add("fantlab");
         if (flEdition != null) {
-            saved.add(persist(orgId, "Title", title, mapFantLab(flEdition, null), "fantlab", 0.5));
+            MtData d = persist(orgId, "Title", title, mapFantLab(flEdition, null), "fantlab", 0.5);
+            savedByGuid.put(d.getGuid(), d);
         }
 
-        if (saved.isEmpty()) {
+        if (savedByGuid.isEmpty()) {
             if (allowLlmFallback && llmFallbackEnabled) {
                 JsonNode llmResult = llmFallbackClient.findByTitle(title);
                 attempted.add("llm_fallback");
@@ -469,13 +471,13 @@ public class PublicSourcesEnrichmentService {
                     LlmSuggestion suggestion = saveSuggestion(orgId, null, title, llmResult);
                     log.info("Книга '{}' восстановлена через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
                             title, suggestion.getId());
-                    return saved;
+                    return new ArrayList<>(savedByGuid.values());
                 }
             }
             saveUnresolved(orgId, null, title, null, attempted);
         }
 
-        return saved;
+        return new ArrayList<>(savedByGuid.values());
     }
 
     private Map<String, String> mapSigla(SiglaClient.SiglaRecord record, String queriedIsbn) {
