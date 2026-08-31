@@ -38,9 +38,9 @@ docker compose up -d --build
 Три публичных метода, ограничение 60 запросов/мин с одного IP:
 
 ```bash
-curl "https://bookmetadata.ru/api/v1/search/isbn/9785171234567"
+curl "https://bookmetadata.ru/api/v1/search/isbn/9785389143852"
 curl "https://bookmetadata.ru/api/v1/search/title?q=Мастер+и+Маргарита"
-curl "https://bookmetadata.ru/api/v1/search?q=9785171234567"
+curl "https://bookmetadata.ru/api/v1/search?q=9785389143852"
 ```
 
 Выбор полей: `?fields=Title,AuthorName,ISBN`. Полное описание — на
