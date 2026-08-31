@@ -14,10 +14,10 @@
 Нужны только два файла — не нужно клонировать репозиторий и ставить Java/Gradle:
 
 ```bash
-curl -O https://raw.githubusercontent.com/malexple/book-metadata-service/main/docker-compose.hub.yml
+curl -O https://raw.githubusercontent.com/malexple/book-metadata-service/main/docker-compose.yml
 curl -O https://raw.githubusercontent.com/malexple/book-metadata-service/main/.env.example
 cp .env.example .env   # открыть и поправить DB_PASSWORD
-docker compose -f docker-compose.hub.yml up -d
+docker compose -f docker-compose.yml up -d
 curl http://localhost:8080/api/v1/search?q=Дорога
 ```
 
@@ -69,8 +69,7 @@ Force.com Multitenant Architecture — гибкая схема без ALTER TABL
 
 - `build-and-push.sh` / `build-and-push.ps1` — сборка и публикация образа
   в Docker Hub под тегами `:latest` и `:<git-sha>`.
-- `docker-compose.yml` — сборка из исходников (для разработки).
-- `docker-compose.hub.yml` — готовый образ с Docker Hub (для конечных
+- `docker-compose.yml` — готовый образ с Docker Hub (для конечных
   пользователей, без клонирования репозитория).
 
 ## Лицензия
