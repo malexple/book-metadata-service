@@ -62,6 +62,8 @@ public class PublicSourcesEnrichmentService {
     @Value("${llm.fallback.confidence:0.3}")
     private double llmFallbackConfidence;
 
+    private static final int TITLE_SEARCH_LIMIT = 20;
+
     @Transactional
     public MtData enrichByIsbn(Integer orgId, String isbn) {
         return enrichByIsbn(orgId, isbn, true);
@@ -116,47 +118,6 @@ public class PublicSourcesEnrichmentService {
 
         saveUnresolved(orgId, isbn, null, null, attempted);
         log.info("ISBN {} not found in any source (attempted: {}), saved to unresolved_lookup", isbn, attempted);
-        return null;
-    }
-
-    /**
-     * Обогащение по названию — для изданий без ISBN (старые книги и т.п.).
-     */
-    @Transactional
-    public MtData enrichByTitle(Integer orgId, String title) {
-        List<String> attempted = new ArrayList<>();
-
-        JsonNode olDoc = openLibraryClient.findByTitle(title);
-        attempted.add("openlibrary");
-        if (olDoc != null) {
-            return persist(orgId, "Title", title, mapOpenLibrarySearch(olDoc), "openlibrary", 0.5);
-        }
-
-        JsonNode gbVolume = googleBooksClient.searchByTitle(title, 1);
-        attempted.add("googlebooks");
-        if (gbVolume != null) {
-            return persist(orgId, "Title", title, mapGoogleBooks(gbVolume, null), "googlebooks", 0.5);
-        }
-
-        JsonNode flEdition = fantLabClient.findByTitle(title);
-        attempted.add("fantlab");
-        if (flEdition != null) {
-            return persist(orgId, "Title", title, mapFantLab(flEdition, null), "fantlab", 0.5);
-        }
-
-        if (llmFallbackEnabled) {
-            JsonNode llmResult = llmFallbackClient.findByTitle(title);
-            attempted.add("llm_fallback");
-            if (llmResult != null) {
-                LlmSuggestion suggestion = saveSuggestion(orgId, null, title, llmResult);
-                log.info("Книга '{}' восстановлена через LLM fallback -> llm_suggestions#{} (требует ручной модерации)",
-                        title, suggestion.getId());
-                return null; // не пишем в mt_data — ждём approve
-            }
-        }
-
-        saveUnresolved(orgId, null, title, null, attempted);
-        log.info("Book '{}' not found by title in any source (attempted: {}), saved to unresolved_lookup", title, attempted);
         return null;
     }
 
@@ -455,16 +416,28 @@ public class PublicSourcesEnrichmentService {
         List<MtData> saved = new ArrayList<>();
         List<String> attempted = new ArrayList<>();
 
-        JsonNode olDoc = openLibraryClient.findByTitle(title);
+        List<JsonNode> olDocs = openLibraryClient.findByTitle(title, TITLE_SEARCH_LIMIT);
         attempted.add("openlibrary");
-        if (olDoc != null) {
-            saved.add(persist(orgId, "Title", title, mapOpenLibrarySearch(olDoc), "openlibrary", 0.5));
+        if (!olDocs.isEmpty()) {
+            boolean ambiguous = olDocs.size() > 1;
+            for (JsonNode doc : olDocs) {
+                Map<String, String> values = mapOpenLibrarySearch(doc);
+                String candidateTitle = values.getOrDefault("Title", title);
+                if (ambiguous) values.put("SourceStatus", "needs_review_multiple_candidates");
+                saved.add(persist(orgId, "Title", candidateTitle, values, "openlibrary", ambiguous ? 0.3 : 0.5));
+            }
         }
 
-        JsonNode gbVolume = googleBooksClient.searchByTitle(title, 1);
+        List<JsonNode> gbVolumes = googleBooksClient.searchByTitle(title, TITLE_SEARCH_LIMIT);
         attempted.add("googlebooks");
-        if (gbVolume != null) {
-            saved.add(persist(orgId, "Title", title, mapGoogleBooks(gbVolume, null), "googlebooks", 0.5));
+        if (!gbVolumes.isEmpty()) {
+            boolean ambiguous = gbVolumes.size() > 1;
+            for (JsonNode volumeInfo : gbVolumes) {
+                Map<String, String> values = mapGoogleBooks(volumeInfo, null);
+                String candidateTitle = values.getOrDefault("Title", title);
+                if (ambiguous) values.put("SourceStatus", "needs_review_multiple_candidates");
+                saved.add(persist(orgId, "Title", candidateTitle, values, "googlebooks", ambiguous ? 0.3 : 0.5));
+            }
         }
 
         // Sigla может вернуть много кандидатов для родовых заглавий — это и есть штатный случай,
@@ -478,8 +451,6 @@ public class PublicSourcesEnrichmentService {
                 if (ambiguous) {
                     values.put("SourceStatus", "needs_review_multiple_candidates");
                 }
-                // Дедупим по точному заглавию конкретного издания (оно у каждого кандидата разное,
-                // включая подзаголовок/составителей) — НЕ по исходному запросу title.
                 saved.add(persist(orgId, "Title", r.title(), values, "sigla", ambiguous ? 0.3 : 0.55));
             }
         }
@@ -506,6 +477,7 @@ public class PublicSourcesEnrichmentService {
 
         return saved;
     }
+
     private Map<String, String> mapSigla(SiglaClient.SiglaRecord record, String queriedIsbn) {
         Map<String, String> values = mapSigla(record);
         if (record.isbn() == null && queriedIsbn != null) {
@@ -513,6 +485,7 @@ public class PublicSourcesEnrichmentService {
         }
         return values;
     }
+
     private Map<String, String> mapSigla(SiglaClient.SiglaRecord record) {
         Map<String, String> values = new LinkedHashMap<>();
         putIfPresent(values, "ISBN", record.isbn());

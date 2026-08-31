@@ -48,27 +48,49 @@ public class GoogleBooksClient {
         }
     }
 
-    public JsonNode searchByTitle(String title, int limit) {
-        String url = withKey(BASE_URL + "?q=intitle:" + title.replace(" ", "+") + "&maxResults=" + limit);
-        try {
-            String raw = restClient.get().uri(url).retrieve().body(String.class);
-            JsonNode root = objectMapper.readTree(raw);
-            JsonNode items = root.get("items");
-            if (items == null || !items.isArray() || items.isEmpty()) {
-                return null;
-            }
-            return items.get(0).get("volumeInfo");
-        } catch (Exception e) {
-            log.error("Google Books title search failed for '{}'", title, e);
-            return null;
-        }
-    }
-
     private String withKey(String url) {
         if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
             return url + "&key=" + properties.getApiKey();
         }
         log.warn("google.books.api-key not configured — anonymous quota is likely exhausted (429)");
         return url;
+    }
+
+    public java.util.List<JsonNode> searchByTitle(String title, int limit) {
+        try {
+            String raw = restClient.get()
+                    .uri(uriBuilder -> {
+                        var builder = uriBuilder
+                                .scheme("https")
+                                .host("www.googleapis.com")
+                                .path("/books/v1/volumes")
+                                .queryParam("q", "intitle:" + title)
+                                .queryParam("maxResults", limit);
+                        if (properties.getApiKey() != null && !properties.getApiKey().isBlank()) {
+                            builder.queryParam("key", properties.getApiKey());
+                        } else {
+                            log.warn("google.books.api-key not configured — anonymous quota is likely exhausted (429)");
+                        }
+                        return builder.build();
+                    })
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode items = root.get("items");
+            if (items == null || !items.isArray() || items.isEmpty()) {
+                return java.util.List.of();
+            }
+
+            java.util.List<JsonNode> result = new java.util.ArrayList<>();
+            items.forEach(item -> {
+                JsonNode volumeInfo = item.get("volumeInfo");
+                if (volumeInfo != null) result.add(volumeInfo);
+            });
+            return result;
+        } catch (Exception e) {
+            log.error("Google Books title search failed for '{}'", title, e);
+            return java.util.List.of();
+        }
     }
 }

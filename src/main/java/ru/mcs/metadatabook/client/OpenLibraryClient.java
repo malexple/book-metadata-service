@@ -56,11 +56,18 @@ public class OpenLibraryClient {
      * документ из "docs", либо null, если ничего не найдено.
      */
     public JsonNode findByTitle(String title) {
-        String url = SEARCH_URL + "?title=" + java.net.URLEncoder.encode(title, java.nio.charset.StandardCharsets.UTF_8)
-                + "&limit=1";
-
         try {
-            String raw = restClient.get().uri(url).retrieve().body(String.class);
+            String raw = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("https")
+                            .host("openlibrary.org")
+                            .path("/search.json")
+                            .queryParam("title", title)
+                            .queryParam("limit", 1)
+                            .build())
+                    .retrieve()
+                    .body(String.class);
+
             JsonNode root = objectMapper.readTree(raw);
             JsonNode docs = root.get("docs");
             if (docs == null || !docs.isArray() || docs.isEmpty()) {
@@ -71,6 +78,35 @@ public class OpenLibraryClient {
         } catch (Exception e) {
             log.error("Open Library title search failed for '{}'", title, e);
             return null;
+        }
+    }
+
+    public java.util.List<JsonNode> findByTitle(String title, int limit) {
+        try {
+            String raw = restClient.get()
+                    .uri(uriBuilder -> uriBuilder
+                            .scheme("https")
+                            .host("openlibrary.org")
+                            .path("/search.json")
+                            .queryParam("title", title)
+                            .queryParam("limit", limit)
+                            .build())
+                    .retrieve()
+                    .body(String.class);
+
+            JsonNode root = objectMapper.readTree(raw);
+            JsonNode docs = root.get("docs");
+            if (docs == null || !docs.isArray() || docs.isEmpty()) {
+                log.debug("Open Library: title '{}' not found", title);
+                return java.util.List.of();
+            }
+
+            java.util.List<JsonNode> result = new java.util.ArrayList<>();
+            docs.forEach(result::add);
+            return result;
+        } catch (Exception e) {
+            log.error("Open Library title search failed for '{}'", title, e);
+            return java.util.List.of();
         }
     }
 }
