@@ -39,7 +39,7 @@ public class MtData {
     @Column(name = "obj_id", nullable = false)
     private Integer objId;
 
-    @Column(name = "name")
+    @Column(name = "name", length = 1000)
     private String name;
 
     @Column(name = "value0", length = 4000) private String value0;

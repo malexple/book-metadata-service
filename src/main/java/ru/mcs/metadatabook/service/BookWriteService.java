@@ -43,7 +43,7 @@ public class BookWriteService {
         applyValues(data, values, fieldMap, source, confidence);
 
         String title = values.get("Title") != null ? values.get("Title") : values.get("title");
-        data.setName(title);
+        data.setName(title != null && title.length() > 1000 ? title.substring(0, 1000) : title);
 
         MtData saved = dataRepository.save(data);
 
