@@ -28,10 +28,11 @@ public class OpenApiConfig {
                                 .name("Malexple")
                                 .email("malexple@gmail.ru"))
                         .license(new License()
-                                .name("Apache 2.0")
-                                .url("https://www.apache.org/licenses/LICENSE-2.0")))
+                                .name("MIT")
+                                .url("https://opensource.org/licenses/MIT")))
                 .servers(List.of(
-                        new Server().url("http://localhost:8081").description("Local Dev")
+                        new Server().url("https://www.bookmetadata.ru").description("Prod Dev"),
+                        new Server().url("http://localhost:8080").description("Local Dev")
                 ));
     }
 }

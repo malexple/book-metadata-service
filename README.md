@@ -74,4 +74,4 @@ Force.com Multitenant Architecture — гибкая схема без ALTER TABL
 
 ## Лицензия
 
-Apache 2.0
+MIT
