@@ -38,7 +38,7 @@ public class DailyStatsScheduler {
     private final MetadataService metadataService;
     private final RequestCounterFilter requestCounterFilter;
 
-    @Scheduled(cron = "0 0 * * * *") // каждый час, в начале часа
+    @Scheduled(cron = "0 * * * * *") // раз в минуту, на 0-й секунде каждой минуты
     @Transactional
     public void takeSnapshot() {
         MtObject book = metadataService.getObjectByName(DEFAULT_ORG_ID, "Book");

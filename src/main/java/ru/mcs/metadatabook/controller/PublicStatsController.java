@@ -29,7 +29,7 @@ public class PublicStatsController {
 
     private final DailyStatsRepository dailyStatsRepository;
 
-    @Operation(summary = "Публичные агрегированные счётчики (обновляются раз в час)")
+    @Operation(summary = "Публичные агрегированные счётчики (обновляются раз в минуту)")
     @GetMapping("/stats")
     public ResponseEntity<Map<String, Object>> getPublicStats() {
         DailyStats latest = dailyStatsRepository.findTopByOrgIdOrderBySnapshotAtDesc(DEFAULT_ORG_ID)
