@@ -31,6 +31,8 @@ public class PivotIndexService {
 
     private final MtIndexRepository indexRepository;
 
+    private static final int MAX_INDEX_STRING_VALUE = 1000;
+
     @Transactional
     public void syncIndexes(MtData data, List<MtField> indexedFields) {
         Integer orgId = data.getOrgId();
@@ -49,7 +51,7 @@ public class PivotIndexService {
                     .guid(guid)
                     .build();
 
-            populateIndexValue(index, field.getDataType(), value);
+            populateIndexValue(index, field, value);
             entityManager.persist(index);
         }
     }
@@ -79,10 +81,10 @@ public class PivotIndexService {
         entityManager.persist(history);
     }
 
-    private void populateIndexValue(MtIndex index, String dataType, String value) {
-        switch (dataType) {
+    private void populateIndexValue(MtIndex index, MtField field, String value) {
+        switch (field.getDataType()) {
             case "text", "email", "url", "phone", "picklist", "lookup" ->
-                    index.setStringValue(value.toLowerCase().trim());
+                    index.setStringValue(truncateForIndex(value.toLowerCase().trim(), field.getLength()));
             case "number", "currency", "percent" -> {
                 try {
                     index.setNumValue(new BigDecimal(value));
@@ -97,7 +99,13 @@ public class PivotIndexService {
                     log.warn("Invalid date value for index: {}", value);
                 }
             }
-            default -> index.setStringValue(value.toLowerCase().trim());
+            default -> index.setStringValue(truncateForIndex(value.toLowerCase().trim(), field.getLength()));
         }
+    }
+
+    private String truncateForIndex(String value, Integer declaredLength) {
+        int limit = (declaredLength != null && declaredLength <= MAX_INDEX_STRING_VALUE)
+                ? declaredLength : MAX_INDEX_STRING_VALUE;
+        return value.length() > limit ? value.substring(0, limit) : value;
     }
 }
